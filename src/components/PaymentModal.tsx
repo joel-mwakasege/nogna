@@ -1,0 +1,513 @@
+import { useState, useEffect, useRef } from 'react';
+import { X, Paperclip, Trash2, FileText, Image } from 'lucide-react';
+import { Button } from './Button';
+import { supabase } from '../lib/supabase';
+import { Database } from '../lib/database.types';
+import { useAuth } from '../contexts/AuthContext';
+import {
+  uploadFile,
+  deleteFile,
+  ALLOWED_FILE_TYPES,
+  MAX_FILE_SIZE,
+  formatFileSize,
+} from '../lib/file-upload-utils';
+
+type Account = Database['public']['Tables']['accounts']['Row'];
+type PaymentInsert = Database['public']['Tables']['payments']['Insert'];
+type Payment = Database['public']['Tables']['payments']['Row'];
+
+interface PendingFile {
+  file: File;
+  preview?: string;
+}
+
+interface ExistingAttachment {
+  id: string;
+  file_name: string;
+  file_path: string;
+  file_type: string;
+  file_size: number;
+  signed_url: string;
+}
+
+interface PaymentModalProps {
+  isOpen: boolean;
+  documentId: string;
+  documentCurrency: string;
+  remainingAmount: number;
+  onClose: () => void;
+  onPaymentAdded: () => void;
+  editPayment?: (Payment & { account_name: string; attachments: ExistingAttachment[] }) | null;
+}
+
+export function PaymentModal({
+  isOpen,
+  documentId,
+  documentCurrency,
+  remainingAmount,
+  onClose,
+  onPaymentAdded,
+  editPayment,
+}: PaymentModalProps) {
+  const { userProfile } = useAuth();
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]);
+  const [existingAttachments, setExistingAttachments] = useState<ExistingAttachment[]>([]);
+  const [removedAttachmentIds, setRemovedAttachmentIds] = useState<string[]>([]);
+  const [fileError, setFileError] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const isEditMode = !!editPayment;
+
+  const [formData, setFormData] = useState<PaymentInsert>({
+    document_id: documentId,
+    account_id: '',
+    amount: remainingAmount,
+    currency: documentCurrency as 'USD' | 'GBP' | 'EUR',
+    payment_date: new Date().toISOString().split('T')[0],
+    payment_method: 'bank_transfer',
+    reference_number: '',
+    notes: '',
+  });
+
+  useEffect(() => {
+    if (isOpen) {
+      loadAccounts();
+      setPendingFiles([]);
+      setRemovedAttachmentIds([]);
+      setFileError('');
+
+      if (editPayment) {
+        setFormData({
+          document_id: editPayment.document_id,
+          account_id: editPayment.account_id,
+          amount: editPayment.amount,
+          currency: editPayment.currency as 'USD' | 'GBP' | 'EUR',
+          payment_date: editPayment.payment_date,
+          payment_method: editPayment.payment_method,
+          reference_number: editPayment.reference_number || '',
+          notes: editPayment.notes || '',
+        });
+        setExistingAttachments(editPayment.attachments || []);
+      } else {
+        setFormData((prev) => ({
+          ...prev,
+          document_id: documentId,
+          amount: remainingAmount,
+          currency: documentCurrency as 'USD' | 'GBP' | 'EUR',
+          payment_date: new Date().toISOString().split('T')[0],
+          payment_method: 'bank_transfer',
+          account_id: '',
+          reference_number: '',
+          notes: '',
+        }));
+        setExistingAttachments([]);
+      }
+    }
+  }, [isOpen, editPayment]);
+
+  const loadAccounts = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('accounts')
+        .select('*')
+        .eq('is_active', true)
+        .order('name');
+
+      if (error) throw error;
+      setAccounts(data || []);
+      if (!editPayment && data && data.length > 0) {
+        setFormData((prev) => ({ ...prev, account_id: data[0].id }));
+      }
+    } catch (error) {
+      console.error('Error loading accounts:', error);
+    }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setFileError('');
+    const files = Array.from(e.target.files || []);
+
+    for (const file of files) {
+      if (!ALLOWED_FILE_TYPES.includes(file.type)) {
+        setFileError('Only images, PDFs, and Word documents are allowed.');
+        return;
+      }
+      if (file.size > MAX_FILE_SIZE) {
+        setFileError(`"${file.name}" exceeds the 10MB size limit.`);
+        return;
+      }
+    }
+
+    const newPending: PendingFile[] = files.map((file) => ({
+      file,
+      preview: file.type.startsWith('image/') ? URL.createObjectURL(file) : undefined,
+    }));
+
+    setPendingFiles((prev) => [...prev, ...newPending]);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const removePendingFile = (index: number) => {
+    setPendingFiles((prev) => {
+      const updated = [...prev];
+      if (updated[index].preview) URL.revokeObjectURL(updated[index].preview!);
+      updated.splice(index, 1);
+      return updated;
+    });
+  };
+
+  const removeExistingAttachment = (id: string) => {
+    setRemovedAttachmentIds((prev) => [...prev, id]);
+    setExistingAttachments((prev) => prev.filter((a) => a.id !== id));
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('User not authenticated');
+      if (!userProfile?.company_id) throw new Error('Company information not found');
+
+      let paymentId: string;
+
+      if (isEditMode && editPayment) {
+        const { error } = await supabase
+          .from('payments')
+          .update({
+            account_id: formData.account_id,
+            amount: formData.amount,
+            currency: formData.currency,
+            payment_date: formData.payment_date,
+            payment_method: formData.payment_method,
+            reference_number: formData.reference_number,
+            notes: formData.notes,
+          })
+          .eq('id', editPayment.id);
+
+        if (error) throw error;
+        paymentId = editPayment.id;
+
+        // Soft-delete removed attachments
+        if (removedAttachmentIds.length > 0) {
+          await supabase
+            .from('payment_attachments')
+            .update({ deleted_at: new Date().toISOString() })
+            .in('id', removedAttachmentIds);
+
+          // Also remove from storage
+          const removedAttachments = (editPayment.attachments || []).filter((a) =>
+            removedAttachmentIds.includes(a.id)
+          );
+          await Promise.all(
+            removedAttachments.map((a) => deleteFile(a.file_path, 'payment-attachments'))
+          );
+        }
+      } else {
+        const { data: payment, error } = await supabase
+          .from('payments')
+          .insert([{
+            ...formData,
+            user_id: user.id,
+            company_id: userProfile.company_id,
+          }])
+          .select('id')
+          .single();
+
+        if (error) throw error;
+        paymentId = payment.id;
+      }
+
+      // Upload new attachments
+      if (pendingFiles.length > 0) {
+        await Promise.all(
+          pendingFiles.map(async ({ file }) => {
+            const filePath = await uploadFile(file, 'payment-attachments', paymentId);
+            await supabase.from('payment_attachments').insert({
+              payment_id: paymentId,
+              file_name: file.name,
+              file_path: filePath,
+              file_size: file.size,
+              file_type: file.type,
+              uploaded_by: user.id,
+            });
+          })
+        );
+      }
+
+      onPaymentAdded();
+      onClose();
+    } catch (error) {
+      console.error('Error saving payment:', error);
+      alert('Failed to save payment. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  if (!isOpen) return null;
+
+  const effectiveMax = isEditMode && editPayment
+    ? remainingAmount + editPayment.amount
+    : remainingAmount;
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+        <div className="sticky top-0 bg-white border-b border-gray-200 px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between">
+          <h2 className="text-lg sm:text-xl lg:text-2xl font-bold">
+            {isEditMode ? 'Edit Payment' : 'Record Payment'}
+          </h2>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-600 transition-colors p-2"
+          >
+            <X className="w-5 h-5 sm:w-6 sm:h-6" />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="p-4 sm:p-6 space-y-4 sm:space-y-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-2">
+                Payment Amount *
+              </label>
+              <input
+                type="number"
+                step="0.01"
+                min="0.01"
+                max={effectiveMax}
+                value={formData.amount}
+                onChange={(e) =>
+                  setFormData({ ...formData, amount: parseFloat(e.target.value) })
+                }
+                className="w-full px-3 sm:px-4 py-2 sm:py-2.5 text-sm sm:text-base border border-gray-300 rounded-lg focus:ring-2 focus:ring-black focus:border-transparent"
+                required
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Remaining: {documentCurrency} {effectiveMax.toFixed(2)}
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-2">
+                Payment Date *
+              </label>
+              <input
+                type="date"
+                value={formData.payment_date}
+                onChange={(e) =>
+                  setFormData({ ...formData, payment_date: e.target.value })
+                }
+                className="w-full px-3 sm:px-4 py-2 sm:py-2.5 text-sm sm:text-base border border-gray-300 rounded-lg focus:ring-2 focus:ring-black focus:border-transparent"
+                required
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-2">
+              Account Received *
+            </label>
+            <select
+              value={formData.account_id}
+              onChange={(e) =>
+                setFormData({ ...formData, account_id: e.target.value })
+              }
+              className="w-full px-3 sm:px-4 py-2 sm:py-2.5 text-sm sm:text-base border border-gray-300 rounded-lg focus:ring-2 focus:ring-black focus:border-transparent"
+              required
+            >
+              <option value="">Select an account</option>
+              {accounts.map((account) => (
+                <option key={account.id} value={account.id}>
+                  {account.name} ({account.account_type})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-2">
+              Payment Method *
+            </label>
+            <select
+              value={formData.payment_method}
+              onChange={(e) =>
+                setFormData({
+                  ...formData,
+                  payment_method: e.target.value as PaymentInsert['payment_method'],
+                })
+              }
+              className="w-full px-3 sm:px-4 py-2 sm:py-2.5 text-sm sm:text-base border border-gray-300 rounded-lg focus:ring-2 focus:ring-black focus:border-transparent"
+              required
+            >
+              <option value="bank_transfer">Bank Transfer</option>
+              <option value="credit_card">Credit Card</option>
+              <option value="paypal">PayPal</option>
+              <option value="stripe">Stripe</option>
+              <option value="cash">Cash</option>
+              <option value="check">Check</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-2">
+              Reference Number
+            </label>
+            <input
+              type="text"
+              value={formData.reference_number || ''}
+              onChange={(e) =>
+                setFormData({ ...formData, reference_number: e.target.value })
+              }
+              placeholder="Transaction ID, Check Number, etc."
+              className="w-full px-3 sm:px-4 py-2 sm:py-2.5 text-sm sm:text-base border border-gray-300 rounded-lg focus:ring-2 focus:ring-black focus:border-transparent"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-2">
+              Notes / Reason
+            </label>
+            <textarea
+              value={formData.notes || ''}
+              onChange={(e) =>
+                setFormData({ ...formData, notes: e.target.value })
+              }
+              placeholder="Payment details, reason, or additional notes..."
+              rows={3}
+              className="w-full px-3 sm:px-4 py-2 sm:py-2.5 text-sm sm:text-base border border-gray-300 rounded-lg focus:ring-2 focus:ring-black focus:border-transparent"
+            />
+          </div>
+
+          {/* Attachments */}
+          <div>
+            <label className="block text-xs sm:text-sm font-medium text-gray-700 mb-2">
+              Attachments
+            </label>
+
+            {/* Existing attachments (edit mode) */}
+            {existingAttachments.length > 0 && (
+              <ul className="mb-3 space-y-2">
+                {existingAttachments.map((att) => {
+                  const isImage = att.file_type.startsWith('image/');
+                  return (
+                    <li
+                      key={att.id}
+                      className="flex items-center gap-3 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2"
+                    >
+                      {isImage ? (
+                        <img
+                          src={att.signed_url}
+                          alt={att.file_name}
+                          className="w-8 h-8 object-cover rounded flex-shrink-0"
+                        />
+                      ) : (
+                        <FileText className="w-8 h-8 text-red-400 flex-shrink-0" />
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-gray-800 truncate">{att.file_name}</p>
+                        <p className="text-xs text-gray-500">{formatFileSize(att.file_size)}</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => removeExistingAttachment(att.id)}
+                        className="text-gray-400 hover:text-red-500 transition-colors flex-shrink-0"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+
+            <div
+              onClick={() => fileInputRef.current?.click()}
+              className="border-2 border-dashed border-gray-200 rounded-lg px-4 py-5 flex flex-col items-center gap-2 cursor-pointer hover:border-gray-400 hover:bg-gray-50 transition-colors"
+            >
+              <Paperclip className="w-5 h-5 text-gray-400" />
+              <p className="text-sm text-gray-500">
+                Click to attach files
+              </p>
+              <p className="text-xs text-gray-400">
+                Images, PDF, Word — up to 10 MB each
+              </p>
+            </div>
+
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              accept={ALLOWED_FILE_TYPES.join(',')}
+              onChange={handleFileChange}
+              className="hidden"
+            />
+
+            {fileError && (
+              <p className="text-xs text-red-500 mt-2">{fileError}</p>
+            )}
+
+            {pendingFiles.length > 0 && (
+              <ul className="mt-3 space-y-2">
+                {pendingFiles.map((pf, i) => (
+                  <li
+                    key={i}
+                    className="flex items-center gap-3 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2"
+                  >
+                    {pf.preview ? (
+                      <img
+                        src={pf.preview}
+                        alt={pf.file.name}
+                        className="w-8 h-8 object-cover rounded flex-shrink-0"
+                      />
+                    ) : pf.file.type === 'application/pdf' ? (
+                      <FileText className="w-8 h-8 text-red-400 flex-shrink-0" />
+                    ) : (
+                      <Image className="w-8 h-8 text-blue-400 flex-shrink-0" />
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-gray-800 truncate">{pf.file.name}</p>
+                      <p className="text-xs text-gray-500">{formatFileSize(pf.file.size)}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => removePendingFile(i)}
+                      className="text-gray-400 hover:text-red-500 transition-colors flex-shrink-0"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
+          <div className="flex flex-col-reverse sm:flex-row gap-3 pt-4 border-t border-gray-200">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={onClose}
+              disabled={isSubmitting}
+              className="flex-1 w-full"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              disabled={isSubmitting}
+              className="flex-1 w-full"
+            >
+              {isSubmitting
+                ? isEditMode ? 'Saving...' : 'Recording...'
+                : isEditMode ? 'Save Changes' : 'Record Payment'}
+            </Button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}

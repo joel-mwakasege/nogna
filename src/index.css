@@ -1,0 +1,125 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --theme-primary: ;
+  --theme-text: ;
+  --theme-accent: ;
+  --theme-card: ;
+  --theme-body-bg: ;
+  --theme-border: ;
+  --theme-shadow: ;
+}
+
+body {
+  background-color: var(--theme-body-bg);
+}
+
+.no-shadows * {
+  box-shadow: none !important;
+}
+
+.themed-bg {
+  background-color: var(--theme-primary);
+}
+
+.themed-text {
+  color: var(--theme-text);
+}
+
+.themed-accent {
+  background-color: var(--theme-accent);
+  color: white;
+}
+
+.themed-border {
+  border-color: var(--theme-border);
+}
+
+.themed-card {
+  background-color: var(--theme-card);
+}
+
+.pdf-export-text {
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  white-space: normal;
+  line-height: 1.5;
+}
+
+@media print {
+  @page {
+    size: A4;
+    margin: 10mm;
+  }
+
+  body {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  /* Hide navigation and non-essential elements */
+  header,
+  nav,
+  .print\:hidden {
+    display: none !important;
+  }
+
+  /* Optimize document layout for printing */
+  .max-w-7xl {
+    max-width: 100% !important;
+  }
+
+  /* Ensure white background for document */
+  .bg-white {
+    background-color: white !important;
+  }
+
+  /* Allow page breaks in sections but avoid breaking tables */
+  div.mb-12 {
+    page-break-inside: auto;
+  }
+
+  /* Prevent breaking table rows */
+  table {
+    page-break-inside: avoid;
+  }
+
+  tbody tr {
+    page-break-inside: avoid;
+    page-break-after: auto;
+  }
+
+  /* Ensure proper spacing for multi-line content */
+  td,
+  th {
+    overflow: visible !important;
+    word-wrap: break-word !important;
+    white-space: normal !important;
+  }
+
+  /* Remove shadows for cleaner print */
+  .shadow-sm {
+    box-shadow: none !important;
+  }
+
+  /* Ensure inputs show their values when printed */
+  input,
+  textarea {
+    border: none !important;
+    padding: 0 !important;
+    background: transparent !important;
+  }
+
+  /* Keep borders visible */
+  .border,
+  .border-t,
+  .border-b,
+  .border-l,
+  .border-r,
+  .border-t-2,
+  .border-l-2 {
+    border-color: #000 !important;
+  }
+}
