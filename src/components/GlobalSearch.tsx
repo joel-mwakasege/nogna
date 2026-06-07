@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import { Search, X, FileText, Users, Receipt, ArrowDownCircle, CreditCard, Loader2 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 
@@ -129,6 +130,8 @@ function mapDepositRow(d: any): DepositResult {
 }
 
 export function GlobalSearch() {
+  const { slug } = useParams<{ slug: string }>();
+  const navigate = useNavigate();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchResults>(EMPTY_RESULTS);
   const [isLoading, setIsLoading] = useState(false);
@@ -337,7 +340,7 @@ export function GlobalSearch() {
   }, [mobileOpen]);
 
   const openResult = (url: string) => {
-    window.open(url, '_blank');
+    navigate(`/${slug}${url}`);
     setIsOpen(false);
     setMobileOpen(false);
     setQuery('');
