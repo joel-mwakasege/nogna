@@ -77,10 +77,10 @@ export default function UserManagement() {
 
   const fetchUsers = async () => {
     setLoading(true);
-    const { data, error } = await supabase
+    const { data, error } = await (supabase as any)
       .from('user_profiles')
       .select('*')
-      .eq('company_id', companyId)
+      .eq('company_id', companyId || '')
       .order('created_at', { ascending: false });
 
     if (!error && data) {
@@ -115,7 +115,7 @@ export default function UserManagement() {
 
     setActionLoading(roleChangeModal.userId);
 
-    const { error } = await supabase
+    const { error } = await (supabase as any)
       .from('user_profiles')
       .update({ role: roleChangeModal.newRole, updated_at: new Date().toISOString() })
       .eq('id', roleChangeModal.userId);
@@ -136,7 +136,7 @@ export default function UserManagement() {
   const toggleUserStatus = async (userId: string, currentStatus: boolean) => {
     setActionLoading(userId);
 
-    const { error } = await supabase
+    const { error } = await (supabase as any)
       .from('user_profiles')
       .update({ is_active: !currentStatus, updated_at: new Date().toISOString() })
       .eq('id', userId);
@@ -272,7 +272,7 @@ export default function UserManagement() {
         return;
       }
 
-      const { error: profileError } = await supabase
+      const { error: profileError } = await (supabase as any)
         .from('user_profiles')
         .update({
           name: editUserName || null,
@@ -406,7 +406,7 @@ export default function UserManagement() {
                               variant="secondary"
                               size="sm"
                               onClick={() => openRoleChangeModal(user.id, user.role, user.email)}
-                              disabled={actionLoading === user.id || user.role === 'owner'}
+                              disabled={actionLoading === user.id}
                             >
                               <Shield className="w-4 h-4" />
                               {user.role === 'admin' ? 'Make User' : 'Make Admin'}
