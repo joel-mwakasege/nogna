@@ -3,123 +3,151 @@
 @tailwind utilities;
 
 :root {
-  --theme-primary: ;
-  --theme-text: ;
-  --theme-accent: ;
-  --theme-card: ;
-  --theme-body-bg: ;
-  --theme-border: ;
-  --theme-shadow: ;
+  --theme-primary: #2596be;
+  --theme-text: #ffffff;
+  --theme-accent: #1e40af;
+  --theme-card: #ffffff;
+  --theme-body-bg: #f3f4f6;
+  --theme-border: #e5e7eb;
+  --theme-success: #10b981;
+  --theme-warning: #f59e0b;
+  --theme-error: #ef4444;
+  --theme-info: #3b82f6;
+  --theme-text-primary: #111827;
+  --theme-text-secondary: #4b5563;
+  --theme-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  --theme-font-family: 'Inter', sans-serif;
 }
 
 body {
-  background-color: var(--theme-body-bg);
+  background-color: var(--theme-body-bg) !important;
+  color: var(--theme-text-primary) !important;
+  font-family: var(--theme-font-family) !important;
+}
+
+/* Base Card elements */
+.themed-bg {
+  background-color: var(--theme-primary) !important;
+}
+
+.themed-text {
+  color: var(--theme-text) !important;
+}
+
+.themed-accent {
+  background-color: var(--theme-accent) !important;
+  color: white !important;
+}
+
+.themed-border {
+  border-color: var(--theme-border) !important;
+}
+
+.themed-card {
+  background-color: var(--theme-card) !important;
+}
+
+/* Custom shadow class overrides */
+.shadow-sm, .shadow, .shadow-md, .shadow-lg, .shadow-xl {
+  box-shadow: var(--theme-shadow) !important;
 }
 
 .no-shadows * {
   box-shadow: none !important;
 }
 
-.themed-bg {
-  background-color: var(--theme-primary);
+/* System-wide Tailwind Utility Overrides to eliminate hardcoded colors */
+
+/* 1. Background colors */
+.bg-white {
+  background-color: var(--theme-card) !important;
 }
 
-.themed-text {
-  color: var(--theme-text);
+.bg-gray-50, .bg-gray-100, .bg-slate-50, .bg-slate-100 {
+  background-color: var(--theme-body-bg) !important;
 }
 
-.themed-accent {
-  background-color: var(--theme-accent);
-  color: white;
+/* 2. Text colors */
+.text-gray-900, .text-slate-900, .text-black {
+  color: var(--theme-text-primary) !important;
 }
 
-.themed-border {
-  border-color: var(--theme-border);
+.text-gray-700, .text-gray-800, .text-slate-700, .text-slate-800 {
+  color: var(--theme-text-primary) !important;
 }
 
-.themed-card {
-  background-color: var(--theme-card);
+.text-gray-600, .text-gray-500, .text-slate-600, .text-slate-500 {
+  color: var(--theme-text-secondary) !important;
 }
 
-.pdf-export-text {
-  word-wrap: break-word;
-  overflow-wrap: break-word;
-  white-space: normal;
-  line-height: 1.5;
+.text-gray-400, .text-slate-400 {
+  color: var(--theme-text-secondary) !important;
+  opacity: 0.8;
 }
 
+/* 3. Border colors */
+.border-gray-100, .border-gray-200, .border-gray-300, .border-slate-100, .border-slate-200, .border-slate-300 {
+  border-color: var(--theme-border) !important;
+}
+
+/* 4. Active/accent states */
+.text-blue-600, .text-blue-700, .text-indigo-600 {
+  color: var(--theme-accent) !important;
+}
+
+.bg-blue-600, .bg-blue-700, .bg-blue-800, .bg-indigo-600, .bg-indigo-700 {
+  background-color: var(--theme-accent) !important;
+  color: #ffffff !important;
+}
+
+.hover\:bg-blue-700:hover, .hover\:bg-blue-800:hover, .hover\:bg-indigo-700:hover {
+  background-color: var(--theme-accent) !important;
+  filter: brightness(0.9) !important;
+}
+
+.focus\:ring-blue-500:focus, .focus\:ring-indigo-500:focus {
+  --tw-ring-color: var(--theme-accent) !important;
+}
+
+/* 5. Alerts & states colors */
+.text-green-600, .text-green-700, .text-green-800 {
+  color: var(--theme-success) !important;
+}
+.bg-green-50, .bg-green-100 {
+  background: color-mix(in srgb, var(--theme-success) 10%, transparent) !important;
+}
+
+.text-amber-600, .text-amber-700, .text-amber-800, .text-orange-600, .text-orange-700 {
+  color: var(--theme-warning) !important;
+}
+.bg-amber-50, .bg-amber-100, .bg-orange-50 {
+  background: color-mix(in srgb, var(--theme-warning) 10%, transparent) !important;
+}
+
+.text-red-600, .text-red-700, .text-red-800 {
+  color: var(--theme-error) !important;
+}
+.bg-red-50, .bg-red-100 {
+  background: color-mix(in srgb, var(--theme-error) 10%, transparent) !important;
+}
+
+/* Input Fields overrides */
+input[type="text"], input[type="email"], input[type="password"], input[type="number"], select, textarea {
+  background-color: var(--theme-card) !important;
+  color: var(--theme-text-primary) !important;
+  border-color: var(--theme-border) !important;
+}
+
+/* Keep Print Settings Intact */
 @media print {
-  @page {
-    size: A4;
-    margin: 10mm;
-  }
-
   body {
-    print-color-adjust: exact;
-    -webkit-print-color-adjust: exact;
+    background-color: white !important;
+    color: black !important;
   }
-
-  /* Hide navigation and non-essential elements */
-  header,
-  nav,
-  .print\:hidden {
-    display: none !important;
-  }
-
-  /* Optimize document layout for printing */
-  .max-w-7xl {
-    max-width: 100% !important;
-  }
-
-  /* Ensure white background for document */
   .bg-white {
     background-color: white !important;
   }
-
-  /* Allow page breaks in sections but avoid breaking tables */
-  div.mb-12 {
-    page-break-inside: auto;
-  }
-
-  /* Prevent breaking table rows */
-  table {
-    page-break-inside: avoid;
-  }
-
-  tbody tr {
-    page-break-inside: avoid;
-    page-break-after: auto;
-  }
-
-  /* Ensure proper spacing for multi-line content */
-  td,
-  th {
-    overflow: visible !important;
-    word-wrap: break-word !important;
-    white-space: normal !important;
-  }
-
-  /* Remove shadows for cleaner print */
-  .shadow-sm {
-    box-shadow: none !important;
-  }
-
-  /* Ensure inputs show their values when printed */
-  input,
-  textarea {
-    border: none !important;
-    padding: 0 !important;
-    background: transparent !important;
-  }
-
-  /* Keep borders visible */
-  .border,
-  .border-t,
-  .border-b,
-  .border-l,
-  .border-r,
-  .border-t-2,
-  .border-l-2 {
+  .border, .border-t, .border-b, .border-l, .border-r {
     border-color: #000 !important;
   }
 }

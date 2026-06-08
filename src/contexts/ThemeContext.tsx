@@ -2,7 +2,7 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from './AuthContext';
 
-interface ThemeColors {
+export interface ThemeColors {
   primaryColor: string;
   textColor: string;
   accentColor: string;
@@ -13,9 +13,11 @@ interface ThemeColors {
   warningColor: string;
   errorColor: string;
   infoColor: string;
+  textPrimary: string;
+  textSecondary: string;
 }
 
-interface ShadowSettings {
+export interface ShadowSettings {
   enabled: boolean;
   intensity: 'none' | 'subtle' | 'medium' | 'strong';
 }
@@ -23,8 +25,10 @@ interface ShadowSettings {
 interface ThemeContextType {
   colors: ThemeColors;
   shadows: ShadowSettings;
+  fontFamily: string;
   updateColors: (colors: ThemeColors) => Promise<void>;
   updateShadows: (shadows: ShadowSettings) => Promise<void>;
+  updateFontFamily: (fontFamily: string) => Promise<void>;
   loading: boolean;
 }
 
@@ -32,7 +36,13 @@ const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 const THEME_CACHE_KEY = 'kavs_theme_cache';
 
-function getCachedTheme(): { colors: ThemeColors; shadows: ShadowSettings } | null {
+interface CachedTheme {
+  colors: ThemeColors;
+  shadows: ShadowSettings;
+  fontFamily: string;
+}
+
+function getCachedTheme(): CachedTheme | null {
   try {
     const raw = localStorage.getItem(THEME_CACHE_KEY);
     if (raw) return JSON.parse(raw);
@@ -40,14 +50,14 @@ function getCachedTheme(): { colors: ThemeColors; shadows: ShadowSettings } | nu
   return null;
 }
 
-function setCachedTheme(colors: ThemeColors, shadows: ShadowSettings) {
+function setCachedTheme(colors: ThemeColors, shadows: ShadowSettings, fontFamily: string) {
   try {
-    localStorage.setItem(THEME_CACHE_KEY, JSON.stringify({ colors, shadows }));
+    localStorage.setItem(THEME_CACHE_KEY, JSON.stringify({ colors, shadows, fontFamily }));
   } catch {}
 }
 
 const defaultColors: ThemeColors = {
-  primaryColor: '#3b82f6',
+  primaryColor: '#2596be',
   textColor: '#ffffff',
   accentColor: '#1e40af',
   cardColor: '#ffffff',
@@ -57,6 +67,8 @@ const defaultColors: ThemeColors = {
   warningColor: '#f59e0b',
   errorColor: '#ef4444',
   infoColor: '#3b82f6',
+  textPrimary: '#111827',
+  textSecondary: '#4b5563',
 };
 
 const defaultShadows: ShadowSettings = {
@@ -69,6 +81,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const cached = getCachedTheme();
   const [colors, setColors] = useState<ThemeColors>(cached?.colors ?? defaultColors);
   const [shadows, setShadows] = useState<ShadowSettings>(cached?.shadows ?? defaultShadows);
+  const [fontFamily, setFontFamily] = useState<string>(cached?.fontFamily ?? 'Inter');
   const [loading, setLoading] = useState(!cached);
 
   useEffect(() => {
@@ -93,6 +106,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     };
   }, [user]);
 
+  // Apply Colors CSS Variables
   useEffect(() => {
     document.documentElement.style.setProperty('--theme-primary', colors.primaryColor);
     document.documentElement.style.setProperty('--theme-text', colors.textColor);
@@ -104,8 +118,29 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     document.documentElement.style.setProperty('--theme-warning', colors.warningColor);
     document.documentElement.style.setProperty('--theme-error', colors.errorColor);
     document.documentElement.style.setProperty('--theme-info', colors.infoColor);
+    document.documentElement.style.setProperty('--theme-text-primary', colors.textPrimary);
+    document.documentElement.style.setProperty('--theme-text-secondary', colors.textSecondary);
   }, [colors]);
 
+  // Apply Dynamic Google Font
+  useEffect(() => {
+    if (fontFamily) {
+      const existingLink = document.getElementById('dynamic-theme-font');
+      if (existingLink) {
+        existingLink.remove();
+      }
+
+      const link = document.createElement('link');
+      link.id = 'dynamic-theme-font';
+      link.rel = 'stylesheet';
+      link.href = `https://fonts.googleapis.com/css2?family=${fontFamily.replace(/\s+/g, '+')}:wght@300;400;500;600;700&display=swap`;
+      document.head.appendChild(link);
+
+      document.documentElement.style.setProperty('--theme-font-family', `"${fontFamily}", sans-serif`);
+    }
+  }, [fontFamily]);
+
+  // Apply Shadows
   useEffect(() => {
     const shadowValues = {
       none: 'none',
@@ -126,7 +161,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
   const loadThemeColors = async () => {
     try {
-      const { data: profile } = await supabase
+      const { data: profile } = await (supabase as any)
         .from('user_profiles')
         .select('company_id')
         .eq('id', user?.id)
@@ -135,9 +170,9 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       let themeData = null;
 
       if (profile?.company_id) {
-        const { data: companyTheme } = await supabase
+        const { data: companyTheme } = await (supabase as any)
           .from('company_settings')
-          .select('theme_primary_color, theme_text_color, theme_accent_color, theme_card_color, theme_body_bg_color, theme_border_color, theme_shadow_enabled, theme_shadow_intensity')
+          .select('theme_primary_color, theme_text_color, theme_accent_color, theme_card_color, theme_body_bg_color, theme_border_color, theme_shadow_enabled, theme_shadow_intensity, theme_text_primary, theme_text_secondary, theme_success_color, theme_warning_color, theme_error_color, theme_info_color, theme_font_family')
           .eq('company_id', profile.company_id)
           .maybeSingle();
 
@@ -147,9 +182,9 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (!themeData) {
-        const { data: systemTheme } = await supabase
+        const { data: systemTheme } = await (supabase as any)
           .from('system_theme_settings')
-          .select('theme_primary_color, theme_text_color, theme_accent_color, theme_card_color, theme_body_bg_color, theme_border_color, theme_shadow_enabled, theme_shadow_intensity')
+          .select('theme_primary_color, theme_text_color, theme_accent_color, theme_card_color, theme_body_bg_color, theme_border_color, theme_shadow_enabled, theme_shadow_intensity, theme_text_primary, theme_text_secondary, theme_success_color, theme_warning_color, theme_error_color, theme_info_color, theme_font_family')
           .maybeSingle();
 
         if (systemTheme) {
@@ -159,24 +194,29 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
       if (themeData) {
         const newColors: ThemeColors = {
-          primaryColor: themeData.theme_primary_color || '#3b82f6',
+          primaryColor: themeData.theme_primary_color || '#2596be',
           textColor: themeData.theme_text_color || '#ffffff',
           accentColor: themeData.theme_accent_color || '#1e40af',
           cardColor: themeData.theme_card_color || '#ffffff',
           bodyBgColor: themeData.theme_body_bg_color || '#f3f4f6',
           borderColor: themeData.theme_border_color || '#e5e7eb',
-          successColor: '#10b981',
-          warningColor: '#f59e0b',
-          errorColor: '#ef4444',
-          infoColor: themeData.theme_primary_color || '#3b82f6',
+          successColor: themeData.theme_success_color || '#10b981',
+          warningColor: themeData.theme_warning_color || '#f59e0b',
+          errorColor: themeData.theme_error_color || '#ef4444',
+          infoColor: themeData.theme_info_color || '#3b82f6',
+          textPrimary: themeData.theme_text_primary || '#111827',
+          textSecondary: themeData.theme_text_secondary || '#4b5563',
         };
         const newShadows: ShadowSettings = {
           enabled: themeData.theme_shadow_enabled ?? true,
           intensity: (themeData.theme_shadow_intensity as 'none' | 'subtle' | 'medium' | 'strong') || 'medium',
         };
+        const newFontFamily = themeData.theme_font_family || 'Inter';
+        
         setColors(newColors);
         setShadows(newShadows);
-        setCachedTheme(newColors, newShadows);
+        setFontFamily(newFontFamily);
+        setCachedTheme(newColors, newShadows, newFontFamily);
       }
     } catch (error) {
       console.error('Error loading theme colors:', error);
@@ -187,7 +227,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
   const updateColors = async (newColors: ThemeColors) => {
     try {
-      const { data: profile } = await supabase
+      const { data: profile } = await (supabase as any)
         .from('user_profiles')
         .select('company_id')
         .eq('id', user?.id)
@@ -197,7 +237,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
         throw new Error('No company associated with user');
       }
 
-      const { error } = await supabase
+      const { error } = await (supabase as any)
         .from('company_settings')
         .update({
           theme_primary_color: newColors.primaryColor,
@@ -206,13 +246,19 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
           theme_card_color: newColors.cardColor,
           theme_body_bg_color: newColors.bodyBgColor,
           theme_border_color: newColors.borderColor,
+          theme_text_primary: newColors.textPrimary,
+          theme_text_secondary: newColors.textSecondary,
+          theme_success_color: newColors.successColor,
+          theme_warning_color: newColors.warningColor,
+          theme_error_color: newColors.errorColor,
+          theme_info_color: newColors.infoColor,
         })
         .eq('company_id', profile.company_id);
 
       if (error) throw error;
 
       setColors(newColors);
-      setCachedTheme(newColors, shadows);
+      setCachedTheme(newColors, shadows, fontFamily);
     } catch (error) {
       console.error('Error updating theme colors:', error);
       throw error;
@@ -221,7 +267,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
   const updateShadows = async (newShadows: ShadowSettings) => {
     try {
-      const { data: profile } = await supabase
+      const { data: profile } = await (supabase as any)
         .from('user_profiles')
         .select('company_id')
         .eq('id', user?.id)
@@ -231,7 +277,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
         throw new Error('No company associated with user');
       }
 
-      const { error } = await supabase
+      const { error } = await (supabase as any)
         .from('company_settings')
         .update({
           theme_shadow_enabled: newShadows.enabled,
@@ -242,15 +288,44 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       if (error) throw error;
 
       setShadows(newShadows);
-      setCachedTheme(colors, newShadows);
+      setCachedTheme(colors, newShadows, fontFamily);
     } catch (error) {
       console.error('Error updating shadow settings:', error);
       throw error;
     }
   };
 
+  const updateFontFamily = async (newFontFamily: string) => {
+    try {
+      const { data: profile } = await (supabase as any)
+        .from('user_profiles')
+        .select('company_id')
+        .eq('id', user?.id)
+        .maybeSingle();
+
+      if (!profile?.company_id) {
+        throw new Error('No company associated with user');
+      }
+
+      const { error } = await (supabase as any)
+        .from('company_settings')
+        .update({
+          theme_font_family: newFontFamily,
+        })
+        .eq('company_id', profile.company_id);
+
+      if (error) throw error;
+
+      setFontFamily(newFontFamily);
+      setCachedTheme(colors, shadows, newFontFamily);
+    } catch (error) {
+      console.error('Error updating font family:', error);
+      throw error;
+    }
+  };
+
   return (
-    <ThemeContext.Provider value={{ colors, shadows, updateColors, updateShadows, loading }}>
+    <ThemeContext.Provider value={{ colors, shadows, fontFamily, updateColors, updateShadows, updateFontFamily, loading }}>
       {children}
     </ThemeContext.Provider>
   );
