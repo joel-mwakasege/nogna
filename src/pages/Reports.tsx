@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
-  BarChart3,
   TrendingUp,
   Users,
   FileText,
@@ -85,8 +84,6 @@ interface DocumentTotal {
   balance?: number;
 }
 
-type ReportView = 'overview' | 'revenue' | 'customers' | 'outstanding' | 'documents';
-
 const formatDate = (dateStr: string) => {
   if (!dateStr) return '';
   const date = new Date(dateStr);
@@ -115,7 +112,6 @@ export default function Reports() {
   const p = (path: string) => `/${slug}${path}`;
   const { isAdmin } = useAuth();
   const [loading, setLoading] = useState(true);
-  const [currentView, setCurrentView] = useState<ReportView>('overview');
   const [dateFrom, setDateFrom] = useState(() => {
     const date = new Date();
     date.setMonth(date.getMonth() - 12);
@@ -240,7 +236,7 @@ export default function Reports() {
 
     const { data, error } = await query;
     if (!error && data) {
-      const documentIds = data.map(d => d.document_id);
+      const documentIds = (data as any[]).map(d => d.document_id);
       
       let customFieldsMap: Record<string, { project?: string; location?: string }> = {};
       let paymentsMap: Record<string, number> = {};
@@ -250,10 +246,10 @@ export default function Reports() {
         const { data: customFields } = await supabase
           .from('client_custom_fields')
           .select('document_id, field_label, field_value')
-          .in('document_id', documentIds);
+          .in('document_id', documentIds) as { data: any[] | null };
 
         if (customFields) {
-          customFields.forEach(field => {
+          (customFields as any[]).forEach(field => {
             const label = field.field_label.trim().toLowerCase();
             const docId = field.document_id;
             if (!customFieldsMap[docId]) {
@@ -272,10 +268,10 @@ export default function Reports() {
           .from('payments')
           .select('document_id, amount')
           .in('document_id', documentIds)
-          .is('deleted_at', null);
+          .is('deleted_at', null) as { data: any[] | null };
 
         if (payments) {
-          payments.forEach(payment => {
+          (payments as any[]).forEach(payment => {
             const docId = payment.document_id;
             paymentsMap[docId] = (paymentsMap[docId] || 0) + Number(payment.amount);
           });
@@ -283,7 +279,7 @@ export default function Reports() {
       }
 
       // Enrich documentData
-      const enrichedData = data.map(doc => {
+      const enrichedData = (data as any[]).map(doc => {
         const docId = doc.document_id;
         const project = customFieldsMap[docId]?.project || '';
         const location = customFieldsMap[docId]?.location || '';
@@ -295,7 +291,7 @@ export default function Reports() {
           location: location,
           paid: paid,
           balance: balance
-        };
+        } as DocumentTotal;
       });
 
       setDocumentData(enrichedData);
@@ -496,7 +492,7 @@ export default function Reports() {
     window.URL.revokeObjectURL(url);
   };
 
-  const totals = calculateTotals();
+  const totals = calculateTotals() as any;
 
   // Group invoice totals by currency
   const invoiceTotalsByCurrency = documentData.reduce((acc, doc) => {
@@ -597,7 +593,7 @@ export default function Reports() {
             </div>
             {totals.isMultiCurrency ? (
               <div className="space-y-2">
-                {Object.entries(totals.revenueByCurrency).map(([currency, amounts]) => (
+                {Object.entries(totals.revenueByCurrency as Record<string, any>).map(([currency, amounts]) => (
                   <div key={currency} className="border-b border-gray-100 last:border-0 pb-2 last:pb-0">
                     <p className="text-xl font-bold text-gray-900">
                       {formatCurrency(amounts.totalRevenue, currency)}
@@ -631,7 +627,7 @@ export default function Reports() {
             </div>
             {totals.isMultiCurrency ? (
               <div className="space-y-1">
-                {Object.entries(totals.outstandingByCurrency).map(([currency, amount]) => (
+                {Object.entries(totals.outstandingByCurrency as Record<string, number>).map(([currency, amount]) => (
                   <p key={currency} className="text-xl font-bold text-gray-900">
                     {formatCurrency(amount, currency)}
                   </p>
@@ -668,7 +664,7 @@ export default function Reports() {
             </div>
             {totals.isMultiCurrency ? (
               <div className="space-y-1">
-                {Object.entries(totals.revenueByCurrency).map(([currency, amounts]) => {
+                {Object.entries(totals.revenueByCurrency as Record<string, any>).map(([currency, amounts]) => {
                   const invoiceCount = revenueData.filter(r => r.currency === currency).reduce((sum, r) => sum + r.document_count, 0);
                   return (
                     <p key={currency} className="text-lg font-bold text-gray-900">
