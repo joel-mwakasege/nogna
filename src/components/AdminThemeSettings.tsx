@@ -69,6 +69,24 @@ const THEME_PRESETS = [
     fontFamily: 'Inter',
   },
   {
+    name: 'Monochrome Chic',
+    colors: {
+      primaryColor: '#09090b',
+      textColor: '#ffffff',
+      accentColor: '#18181b',
+      cardColor: '#ffffff',
+      bodyBgColor: '#fafafa',
+      borderColor: '#e4e4e7',
+      successColor: '#10b981',
+      warningColor: '#f59e0b',
+      errorColor: '#ef4444',
+      infoColor: '#18181b',
+      textPrimary: '#09090b',
+      textSecondary: '#71717a',
+    },
+    fontFamily: 'Outfit',
+  },
+  {
     name: 'Premium Dark',
     colors: {
       primaryColor: '#0f172a',

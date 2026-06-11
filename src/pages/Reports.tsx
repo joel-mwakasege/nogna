@@ -78,9 +78,36 @@ interface DocumentTotal {
   discount_amount: number;
   tax_amount: number;
   total_amount: number;
+  tax_percent: number;
+  project_events?: string;
+  location?: string;
+  paid?: number;
+  balance?: number;
 }
 
 type ReportView = 'overview' | 'revenue' | 'customers' | 'outstanding' | 'documents';
+
+const formatDate = (dateStr: string) => {
+  if (!dateStr) return '';
+  const date = new Date(dateStr);
+  const day = date.getDate();
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const month = months[date.getMonth()];
+  return `${day}-${month}`;
+};
+
+const mapStatus = (status: string) => {
+  switch (status) {
+    case 'paid':
+      return 'f/p';
+    case 'partially_paid':
+      return 'h/p';
+    case 'unpaid':
+      return 'unpaid';
+    default:
+      return status;
+  }
+};
 
 export default function Reports() {
   const navigate = useNavigate();
@@ -202,6 +229,7 @@ export default function Reports() {
     let query = supabase
       .from('document_totals_view')
       .select('*')
+      .eq('document_type', 'invoice')
       .gte('issue_date', from)
       .lte('issue_date', to)
       .order('issue_date', { ascending: false });
@@ -212,8 +240,143 @@ export default function Reports() {
 
     const { data, error } = await query;
     if (!error && data) {
-      setDocumentData(data);
+      const documentIds = data.map(d => d.document_id);
+      
+      let customFieldsMap: Record<string, { project?: string; location?: string }> = {};
+      let paymentsMap: Record<string, number> = {};
+
+      if (documentIds.length > 0) {
+        // Fetch client custom fields
+        const { data: customFields } = await supabase
+          .from('client_custom_fields')
+          .select('document_id, field_label, field_value')
+          .in('document_id', documentIds);
+
+        if (customFields) {
+          customFields.forEach(field => {
+            const label = field.field_label.trim().toLowerCase();
+            const docId = field.document_id;
+            if (!customFieldsMap[docId]) {
+              customFieldsMap[docId] = {};
+            }
+            if (['project/events', 'project/event', 'project', 'event'].includes(label)) {
+              customFieldsMap[docId].project = field.field_value || '';
+            } else if (label === 'location') {
+              customFieldsMap[docId].location = field.field_value || '';
+            }
+          });
+        }
+
+        // Fetch payments
+        const { data: payments } = await supabase
+          .from('payments')
+          .select('document_id, amount')
+          .in('document_id', documentIds)
+          .is('deleted_at', null);
+
+        if (payments) {
+          payments.forEach(payment => {
+            const docId = payment.document_id;
+            paymentsMap[docId] = (paymentsMap[docId] || 0) + Number(payment.amount);
+          });
+        }
+      }
+
+      // Enrich documentData
+      const enrichedData = data.map(doc => {
+        const docId = doc.document_id;
+        const project = customFieldsMap[docId]?.project || '';
+        const location = customFieldsMap[docId]?.location || '';
+        const paid = paymentsMap[docId] || 0;
+        const balance = doc.total_amount - paid;
+        return {
+          ...doc,
+          project_events: project,
+          location: location,
+          paid: paid,
+          balance: balance
+        };
+      });
+
+      setDocumentData(enrichedData);
     }
+  };
+
+  const exportInvoicesToCSV = (data: DocumentTotal[]) => {
+    if (data.length === 0) return;
+
+    const headers = [
+      'Invoice date',
+      'Company/client',
+      'Project/Events',
+      'Location',
+      'Invoice number2',
+      'Tax rate(VAT)',
+      'Total Amount',
+      'Paid',
+      'Balance',
+      'Status'
+    ];
+
+    const formatCSVValue = (val: any) => {
+      if (val === null || val === undefined) return '';
+      const stringValue = String(val);
+      return stringValue.includes(',') ? `"${stringValue}"` : stringValue;
+    };
+
+    const rows = data.map(item => {
+      const taxRate = `${(item.tax_percent || 0).toFixed(2)}%`;
+      return [
+        formatCSVValue(formatDate(item.issue_date)),
+        formatCSVValue(item.customer_name),
+        formatCSVValue(item.project_events),
+        formatCSVValue(item.location),
+        formatCSVValue(item.document_number),
+        formatCSVValue(taxRate),
+        formatCSVValue(item.total_amount),
+        formatCSVValue(item.paid),
+        formatCSVValue(item.balance),
+        formatCSVValue(mapStatus(item.status))
+      ].join(',');
+    });
+
+    const totalsByCurrency = data.reduce((acc, doc) => {
+      const curr = doc.currency || 'USD';
+      if (!acc[curr]) {
+        acc[curr] = { total: 0, paid: 0, balance: 0 };
+      }
+      acc[curr].total += doc.total_amount || 0;
+      acc[curr].paid += doc.paid || 0;
+      acc[curr].balance += doc.balance || 0;
+      return acc;
+    }, {} as Record<string, { total: number; paid: number; balance: number }>);
+
+    Object.entries(totalsByCurrency).forEach(([currency, sum]) => {
+      rows.push([
+        formatCSVValue(`Total (${currency})`),
+        '',
+        '',
+        '',
+        '',
+        '',
+        formatCSVValue(sum.total),
+        formatCSVValue(sum.paid),
+        formatCSVValue(sum.balance),
+        ''
+      ].join(','));
+    });
+
+    const csvContent = [headers.join(','), ...rows].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `monthly-invoice-report-${new Date().toISOString().split('T')[0]}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
   };
 
   const fetchProfitLossData = async (from = dateFrom, to = dateTo, currency = selectedCurrency) => {
@@ -334,6 +497,22 @@ export default function Reports() {
   };
 
   const totals = calculateTotals();
+
+  // Group invoice totals by currency
+  const invoiceTotalsByCurrency = documentData.reduce((acc, doc) => {
+    const curr = doc.currency || 'USD';
+    if (!acc[curr]) {
+      acc[curr] = {
+        total: 0,
+        paid: 0,
+        balance: 0
+      };
+    }
+    acc[curr].total += doc.total_amount || 0;
+    acc[curr].paid += doc.paid || 0;
+    acc[curr].balance += doc.balance || 0;
+    return acc;
+  }, {} as Record<string, { total: number; paid: number; balance: number }>);
 
   if (loading) {
     return (
@@ -865,7 +1044,7 @@ export default function Reports() {
             >
               <div className="flex items-center gap-3">
                 <Calendar className="w-6 h-6 text-emerald-600" />
-                <h2 className="text-xl font-semibold text-gray-900">All Documents</h2>
+                <h2 className="text-xl font-semibold text-gray-900">Monthly Invoice Report</h2>
               </div>
               <div className="flex items-center gap-3">
                 <Button
@@ -873,7 +1052,7 @@ export default function Reports() {
                   variant="secondary"
                   onClick={(e) => {
                     e.stopPropagation();
-                    exportToCSV(documentData, 'all-documents');
+                    exportInvoicesToCSV(documentData);
                   }}
                 >
                   <Download className="w-4 h-4" />
@@ -893,57 +1072,142 @@ export default function Reports() {
                   <table className="min-w-full divide-y divide-gray-200">
                     <thead className="bg-gray-50">
                       <tr>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Document</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Customer</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Invoice date</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Company/client</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Project/Events</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Location</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Invoice number2</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Tax rate(VAT)</th>
+                        <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Total Amount</th>
+                        <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Paid</th>
+                        <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Balance</th>
                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                        <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Subtotal</th>
-                        <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Tax</th>
-                        <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Total</th>
                       </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
                       {documentData.map((item) => (
                         <tr key={item.document_id} className="hover:bg-gray-50">
-                          <td className="px-4 py-3">
+                          <td className="px-4 py-3 text-sm text-gray-900 whitespace-nowrap">
+                            {formatDate(item.issue_date)}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-gray-900">
+                            {item.customer_name}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-gray-900">
+                            {item.project_events || '—'}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-gray-900">
+                            {item.location || '—'}
+                          </td>
+                          <td className="px-4 py-3 text-sm">
                             <button
                               onClick={() => navigate(p(`/documents/${item.document_id}`))}
-                              className="text-sm font-medium text-slate-600 hover:text-blue-800"
+                              className="font-medium text-slate-600 hover:text-blue-800"
                             >
                               {item.document_number}
                             </button>
                           </td>
-                          <td className="px-4 py-3">
-                            <span className="text-sm text-gray-900 capitalize">{item.document_type}</span>
+                          <td className="px-4 py-3 text-sm text-gray-900 whitespace-nowrap">
+                            {(item.tax_percent || 0).toFixed(2)}%
                           </td>
-                          <td className="px-4 py-3 text-sm text-gray-900">{item.customer_name}</td>
-                          <td className="px-4 py-3 text-sm text-gray-600">
-                            {new Date(item.issue_date).toLocaleDateString()}
+                          <td className="px-4 py-3 text-sm text-right text-gray-900 whitespace-nowrap">
+                            {formatCurrency(item.total_amount, item.currency)}
                           </td>
-                          <td className="px-4 py-3">
+                          <td className="px-4 py-3 text-sm text-right text-emerald-600 whitespace-nowrap">
+                            {formatCurrency(item.paid || 0, item.currency)}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-right font-semibold text-amber-600 whitespace-nowrap">
+                            {formatCurrency(item.balance || 0, item.currency)}
+                          </td>
+                          <td className="px-4 py-3 text-sm whitespace-nowrap">
                             <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
                               item.status === 'paid' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
+                              item.status === 'partially_paid' ? 'bg-amber-50 text-amber-700 border border-amber-200' :
                               item.status === 'pending' ? 'bg-sky-50 text-sky-700 border border-sky-200' :
-                              item.status === 'overdue' ? 'bg-red-100 text-red-800' :
-                              'bg-gray-100 text-gray-800'
+                              item.status === 'overdue' ? 'bg-red-50 text-red-700 border border-red-200' :
+                              'bg-gray-50 text-gray-700 border border-gray-200'
                             }`}>
-                              {item.status}
+                              {mapStatus(item.status)}
                             </span>
-                          </td>
-                          <td className="px-4 py-3 text-sm text-right text-gray-900">
-                            {formatCurrency(Number(item.subtotal), item.currency)}
-                          </td>
-                          <td className="px-4 py-3 text-sm text-right text-gray-600">
-                            {formatCurrency(Number(item.tax_amount), item.currency)}
-                          </td>
-                          <td className="px-4 py-3 text-sm text-right font-semibold text-gray-900">
-                            {formatCurrency(Number(item.total_amount), item.currency)}
                           </td>
                         </tr>
                       ))}
                     </tbody>
+                    <tfoot className="bg-gray-50 font-semibold border-t-2 border-gray-200">
+                      {Object.entries(invoiceTotalsByCurrency).map(([currency, sum]) => (
+                        <tr key={currency}>
+                          <td colSpan={6} className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">
+                            Total ({currency})
+                          </td>
+                          <td className="px-4 py-3 text-right text-sm text-gray-900 font-bold whitespace-nowrap">
+                            {formatCurrency(sum.total, currency)}
+                          </td>
+                          <td className="px-4 py-3 text-right text-sm text-emerald-600 font-bold whitespace-nowrap">
+                            {formatCurrency(sum.paid, currency)}
+                          </td>
+                          <td className="px-4 py-3 text-right text-sm text-amber-600 font-bold whitespace-nowrap">
+                            {formatCurrency(sum.balance, currency)}
+                          </td>
+                          <td></td>
+                        </tr>
+                      ))}
+                    </tfoot>
                   </table>
+                </div>
+
+                {/* Multi-currency grouped totals below table */}
+                {Object.keys(invoiceTotalsByCurrency).length > 1 && (
+                  <div className="mt-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                    <h4 className="text-sm font-semibold text-gray-700 mb-3">Totals by Currency</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      {Object.entries(invoiceTotalsByCurrency).map(([currency, sum]) => (
+                        <div key={currency} className="bg-white p-3 rounded border border-gray-100 shadow-sm">
+                          <p className="text-xs font-bold text-gray-400 uppercase">{currency}</p>
+                          <div className="mt-2 space-y-1">
+                            <div className="flex justify-between text-sm">
+                              <span className="text-gray-500">Total Sales:</span>
+                              <span className="font-semibold text-gray-900">{formatCurrency(sum.total, currency)}</span>
+                            </div>
+                            <div className="flex justify-between text-sm">
+                              <span className="text-gray-500">Paid:</span>
+                              <span className="font-semibold text-emerald-600">{formatCurrency(sum.paid, currency)}</span>
+                            </div>
+                            <div className="flex justify-between text-sm">
+                              <span className="text-gray-500">Balance:</span>
+                              <span className="font-semibold text-amber-600">{formatCurrency(sum.balance, currency)}</span>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Styled Summary Card at bottom right */}
+                <div className="flex justify-end mt-6">
+                  <div className="w-full max-w-md bg-[#e2efda] border border-[#a9d18e] rounded-lg p-4 font-mono text-sm text-gray-800 shadow-sm">
+                    {Object.entries(invoiceTotalsByCurrency).map(([currency, sum], index) => (
+                      <div key={currency} className={index > 0 ? 'mt-4 pt-4 border-t border-[#c6e0b4]' : ''}>
+                        {Object.keys(invoiceTotalsByCurrency).length > 1 && (
+                          <div className="font-bold text-[#375623] mb-2">{currency} Summary</div>
+                        )}
+                        <div className="grid grid-cols-2 gap-y-2">
+                          <div className="font-bold text-[#375623]">Total sales</div>
+                          <div className="text-right font-bold text-[#375623]">
+                            {formatCurrency(sum.total, currency)}
+                          </div>
+                          <div className="font-bold text-[#375623]">Paid</div>
+                          <div className="text-right font-bold text-[#375623]">
+                            {formatCurrency(sum.paid, currency)}
+                          </div>
+                          <div className="font-bold text-[#375623]">Balance</div>
+                          <div className="text-right font-bold text-[#375623]">
+                            {formatCurrency(sum.balance, currency)}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
             )}
