@@ -164,24 +164,24 @@ export function AdminThemeSettings({ companies }: AdminThemeSettingsProps) {
   const [themeScope, setThemeScope] = useState<'system' | 'company'>('system');
   const [selectedCompanyId, setSelectedCompanyId] = useState<string>('');
   const [colors, setColors] = useState<ThemeColors>({
-    primaryColor: '#2596be',
+    primaryColor: '#09090b',
     textColor: '#ffffff',
-    accentColor: '#1e40af',
+    accentColor: '#18181b',
     cardColor: '#ffffff',
-    bodyBgColor: '#f3f4f6',
-    borderColor: '#e5e7eb',
+    bodyBgColor: '#fafafa',
+    borderColor: '#e4e4e7',
     successColor: '#10b981',
     warningColor: '#f59e0b',
     errorColor: '#ef4444',
-    infoColor: '#3b82f6',
-    textPrimary: '#111827',
-    textSecondary: '#4b5563',
+    infoColor: '#18181b',
+    textPrimary: '#09090b',
+    textSecondary: '#71717a',
   });
   const [shadows, setShadows] = useState<ShadowSettings>({
     enabled: true,
-    intensity: 'medium',
+    intensity: 'subtle',
   });
-  const [fontFamily, setFontFamily] = useState<string>('Inter');
+  const [fontFamily, setFontFamily] = useState<string>('Outfit');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -206,24 +206,24 @@ export function AdminThemeSettings({ companies }: AdminThemeSettingsProps) {
 
       if (data) {
         setColors({
-          primaryColor: data.theme_primary_color || '#2596be',
+          primaryColor: data.theme_primary_color || '#09090b',
           textColor: data.theme_text_color || '#ffffff',
-          accentColor: data.theme_accent_color || '#1e40af',
+          accentColor: data.theme_accent_color || '#18181b',
           cardColor: data.theme_card_color || '#ffffff',
-          bodyBgColor: data.theme_body_bg_color || '#f3f4f6',
-          borderColor: data.theme_border_color || '#e5e7eb',
+          bodyBgColor: data.theme_body_bg_color || '#fafafa',
+          borderColor: data.theme_border_color || '#e4e4e7',
           successColor: data.theme_success_color || '#10b981',
           warningColor: data.theme_warning_color || '#f59e0b',
           errorColor: data.theme_error_color || '#ef4444',
-          infoColor: data.theme_info_color || '#3b82f6',
-          textPrimary: data.theme_text_primary || '#111827',
-          textSecondary: data.theme_text_secondary || '#4b5563',
+          infoColor: data.theme_info_color || '#18181b',
+          textPrimary: data.theme_text_primary || '#09090b',
+          textSecondary: data.theme_text_secondary || '#71717a',
         });
         setShadows({
           enabled: data.theme_shadow_enabled ?? true,
-          intensity: (data.theme_shadow_intensity as 'none' | 'subtle' | 'medium' | 'strong') || 'medium',
+          intensity: (data.theme_shadow_intensity as 'none' | 'subtle' | 'medium' | 'strong') || 'subtle',
         });
-        setFontFamily(data.theme_font_family || 'Inter');
+        setFontFamily(data.theme_font_family || 'Outfit');
       }
     } catch (error) {
       console.error('Error loading system theme settings:', error);
@@ -248,24 +248,24 @@ export function AdminThemeSettings({ companies }: AdminThemeSettingsProps) {
 
       if (data) {
         setColors({
-          primaryColor: data.theme_primary_color || '#2596be',
+          primaryColor: data.theme_primary_color || '#09090b',
           textColor: data.theme_text_color || '#ffffff',
-          accentColor: data.theme_accent_color || '#1e40af',
+          accentColor: data.theme_accent_color || '#18181b',
           cardColor: data.theme_card_color || '#ffffff',
-          bodyBgColor: data.theme_body_bg_color || '#f3f4f6',
-          borderColor: data.theme_border_color || '#e5e7eb',
+          bodyBgColor: data.theme_body_bg_color || '#fafafa',
+          borderColor: data.theme_border_color || '#e4e4e7',
           successColor: data.theme_success_color || '#10b981',
           warningColor: data.theme_warning_color || '#f59e0b',
           errorColor: data.theme_error_color || '#ef4444',
-          infoColor: data.theme_info_color || '#3b82f6',
-          textPrimary: data.theme_text_primary || '#111827',
-          textSecondary: data.theme_text_secondary || '#4b5563',
+          infoColor: data.theme_info_color || '#18181b',
+          textPrimary: data.theme_text_primary || '#09090b',
+          textSecondary: data.theme_text_secondary || '#71717a',
         });
         setShadows({
           enabled: data.theme_shadow_enabled ?? true,
-          intensity: (data.theme_shadow_intensity as 'none' | 'subtle' | 'medium' | 'strong') || 'medium',
+          intensity: (data.theme_shadow_intensity as 'none' | 'subtle' | 'medium' | 'strong') || 'subtle',
         });
-        setFontFamily(data.theme_font_family || 'Inter');
+        setFontFamily(data.theme_font_family || 'Outfit');
       }
     } catch (error) {
       console.error('Error loading theme settings:', error);
@@ -543,7 +543,7 @@ export function AdminThemeSettings({ companies }: AdminThemeSettingsProps) {
                           type="text"
                           value={colors.primaryColor}
                           onChange={(e) => setColors({ ...colors, primaryColor: e.target.value })}
-                          placeholder="#2596be"
+                          placeholder="#09090b"
                           className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-sm"
                         />
                       </div>
@@ -585,7 +585,7 @@ export function AdminThemeSettings({ companies }: AdminThemeSettingsProps) {
                           type="text"
                           value={colors.accentColor}
                           onChange={(e) => setColors({ ...colors, accentColor: e.target.value })}
-                          placeholder="#1e40af"
+                          placeholder="#18181b"
                           className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-sm"
                         />
                       </div>
@@ -631,7 +631,7 @@ export function AdminThemeSettings({ companies }: AdminThemeSettingsProps) {
                           type="text"
                           value={colors.bodyBgColor}
                           onChange={(e) => setColors({ ...colors, bodyBgColor: e.target.value })}
-                          placeholder="#f3f4f6"
+                          placeholder="#fafafa"
                           className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-sm"
                         />
                       </div>
@@ -652,7 +652,7 @@ export function AdminThemeSettings({ companies }: AdminThemeSettingsProps) {
                           type="text"
                           value={colors.borderColor}
                           onChange={(e) => setColors({ ...colors, borderColor: e.target.value })}
-                          placeholder="#e5e7eb"
+                          placeholder="#e4e4e7"
                           className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-sm"
                         />
                       </div>
@@ -677,7 +677,7 @@ export function AdminThemeSettings({ companies }: AdminThemeSettingsProps) {
                           type="text"
                           value={colors.textPrimary}
                           onChange={(e) => setColors({ ...colors, textPrimary: e.target.value })}
-                          placeholder="#111827"
+                          placeholder="#09090b"
                           className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-sm"
                         />
                       </div>
@@ -698,7 +698,7 @@ export function AdminThemeSettings({ companies }: AdminThemeSettingsProps) {
                           type="text"
                           value={colors.textSecondary}
                           onChange={(e) => setColors({ ...colors, textSecondary: e.target.value })}
-                          placeholder="#4b5563"
+                          placeholder="#71717a"
                           className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-sm"
                         />
                       </div>
@@ -782,7 +782,7 @@ export function AdminThemeSettings({ companies }: AdminThemeSettingsProps) {
                           type="text"
                           value={colors.infoColor}
                           onChange={(e) => setColors({ ...colors, infoColor: e.target.value })}
-                          placeholder="#3b82f6"
+                          placeholder="#18181b"
                           className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-sm"
                         />
                       </div>

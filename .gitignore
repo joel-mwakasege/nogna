@@ -22,3 +22,6 @@ dist-ssr
 *.sw?
 .env
 .vercel
+test_db.js
+scratch/
+

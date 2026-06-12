@@ -272,7 +272,7 @@ export function ThemeSettings() {
                   type="text"
                   value={localColors.primaryColor}
                   onChange={(e) => setLocalColors({ ...localColors, primaryColor: e.target.value })}
-                  placeholder="#2596be"
+                  placeholder="#09090b"
                   className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-sm"
                 />
               </div>
@@ -314,7 +314,7 @@ export function ThemeSettings() {
                   type="text"
                   value={localColors.accentColor}
                   onChange={(e) => setLocalColors({ ...localColors, accentColor: e.target.value })}
-                  placeholder="#1e40af"
+                  placeholder="#18181b"
                   className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-sm"
                 />
               </div>
@@ -360,7 +360,7 @@ export function ThemeSettings() {
                   type="text"
                   value={localColors.bodyBgColor}
                   onChange={(e) => setLocalColors({ ...localColors, bodyBgColor: e.target.value })}
-                  placeholder="#f3f4f6"
+                  placeholder="#fafafa"
                   className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-sm"
                 />
               </div>
@@ -381,7 +381,7 @@ export function ThemeSettings() {
                   type="text"
                   value={localColors.borderColor}
                   onChange={(e) => setLocalColors({ ...localColors, borderColor: e.target.value })}
-                  placeholder="#e5e7eb"
+                  placeholder="#e4e4e7"
                   className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-sm"
                 />
               </div>
@@ -406,7 +406,7 @@ export function ThemeSettings() {
                   type="text"
                   value={localColors.textPrimary}
                   onChange={(e) => setLocalColors({ ...localColors, textPrimary: e.target.value })}
-                  placeholder="#111827"
+                  placeholder="#09090b"
                   className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-sm"
                 />
               </div>
@@ -427,7 +427,7 @@ export function ThemeSettings() {
                   type="text"
                   value={localColors.textSecondary}
                   onChange={(e) => setLocalColors({ ...localColors, textSecondary: e.target.value })}
-                  placeholder="#4b5563"
+                  placeholder="#71717a"
                   className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-sm"
                 />
               </div>
@@ -511,7 +511,7 @@ export function ThemeSettings() {
                   type="text"
                   value={localColors.infoColor}
                   onChange={(e) => setLocalColors({ ...localColors, infoColor: e.target.value })}
-                  placeholder="#3b82f6"
+                  placeholder="#18181b"
                   className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-sm"
                 />
               </div>

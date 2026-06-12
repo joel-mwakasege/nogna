@@ -57,23 +57,23 @@ function setCachedTheme(colors: ThemeColors, shadows: ShadowSettings, fontFamily
 }
 
 const defaultColors: ThemeColors = {
-  primaryColor: '#2596be',
+  primaryColor: '#09090b',
   textColor: '#ffffff',
-  accentColor: '#1e40af',
+  accentColor: '#18181b',
   cardColor: '#ffffff',
-  bodyBgColor: '#f3f4f6',
-  borderColor: '#e5e7eb',
+  bodyBgColor: '#fafafa',
+  borderColor: '#e4e4e7',
   successColor: '#10b981',
   warningColor: '#f59e0b',
   errorColor: '#ef4444',
-  infoColor: '#3b82f6',
-  textPrimary: '#111827',
-  textSecondary: '#4b5563',
+  infoColor: '#18181b',
+  textPrimary: '#09090b',
+  textSecondary: '#71717a',
 };
 
 const defaultShadows: ShadowSettings = {
   enabled: true,
-  intensity: 'medium',
+  intensity: 'subtle',
 };
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
@@ -81,7 +81,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const cached = getCachedTheme();
   const [colors, setColors] = useState<ThemeColors>(cached?.colors ?? defaultColors);
   const [shadows, setShadows] = useState<ShadowSettings>(cached?.shadows ?? defaultShadows);
-  const [fontFamily, setFontFamily] = useState<string>(cached?.fontFamily ?? 'Inter');
+  const [fontFamily, setFontFamily] = useState<string>(cached?.fontFamily ?? 'Outfit');
   const [loading, setLoading] = useState(!cached);
 
   useEffect(() => {
@@ -194,24 +194,24 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
       if (themeData) {
         const newColors: ThemeColors = {
-          primaryColor: themeData.theme_primary_color || '#2596be',
+          primaryColor: themeData.theme_primary_color || '#09090b',
           textColor: themeData.theme_text_color || '#ffffff',
-          accentColor: themeData.theme_accent_color || '#1e40af',
+          accentColor: themeData.theme_accent_color || '#18181b',
           cardColor: themeData.theme_card_color || '#ffffff',
-          bodyBgColor: themeData.theme_body_bg_color || '#f3f4f6',
-          borderColor: themeData.theme_border_color || '#e5e7eb',
+          bodyBgColor: themeData.theme_body_bg_color || '#fafafa',
+          borderColor: themeData.theme_border_color || '#e4e4e7',
           successColor: themeData.theme_success_color || '#10b981',
           warningColor: themeData.theme_warning_color || '#f59e0b',
           errorColor: themeData.theme_error_color || '#ef4444',
-          infoColor: themeData.theme_info_color || '#3b82f6',
-          textPrimary: themeData.theme_text_primary || '#111827',
-          textSecondary: themeData.theme_text_secondary || '#4b5563',
+          infoColor: themeData.theme_info_color || '#18181b',
+          textPrimary: themeData.theme_text_primary || '#09090b',
+          textSecondary: themeData.theme_text_secondary || '#71717a',
         };
         const newShadows: ShadowSettings = {
           enabled: themeData.theme_shadow_enabled ?? true,
-          intensity: (themeData.theme_shadow_intensity as 'none' | 'subtle' | 'medium' | 'strong') || 'medium',
+          intensity: (themeData.theme_shadow_intensity as 'none' | 'subtle' | 'medium' | 'strong') || 'subtle',
         };
-        const newFontFamily = themeData.theme_font_family || 'Inter';
+        const newFontFamily = themeData.theme_font_family || 'Outfit';
         
         setColors(newColors);
         setShadows(newShadows);
