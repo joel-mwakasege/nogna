@@ -1262,9 +1262,10 @@ export default function Reports() {
         <div className="space-y-6">
           {visibleSections.profitLoss && (
             <div className="bg-white rounded-lg shadow">
-              <button
+              <div
+                role="button"
                 onClick={() => toggleSection('profitloss')}
-                className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50"
+                className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 cursor-pointer select-none"
               >
                 <div className="flex items-center gap-3">
                   <PieChart className="w-6 h-6 text-slate-700" />
@@ -1288,7 +1289,7 @@ export default function Reports() {
                     <ChevronDown className="w-5 h-5 text-gray-400" />
                   )}
                 </div>
-              </button>
+              </div>
 
               {expandedSections['profitloss'] && (
                 <div className="px-6 pb-6">
@@ -1376,9 +1377,10 @@ export default function Reports() {
 
           {visibleSections.revenueByPeriod && (
             <div className="bg-white rounded-lg shadow">
-              <button
+              <div
+                role="button"
                 onClick={() => toggleSection('revenue')}
-                className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50"
+                className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 cursor-pointer select-none"
               >
                 <div className="flex items-center gap-3">
                   <TrendingUp className="w-6 h-6 text-emerald-600" />
@@ -1402,7 +1404,7 @@ export default function Reports() {
                     <ChevronDown className="w-5 h-5 text-gray-400" />
                   )}
                 </div>
-              </button>
+              </div>
 
               {expandedSections['revenue'] && (
                 <div className="px-6 pb-6">
@@ -1442,9 +1444,10 @@ export default function Reports() {
 
           {visibleSections.customerRevenue && (
             <div className="bg-white rounded-lg shadow">
-              <button
+              <div
+                role="button"
                 onClick={() => toggleSection('customers')}
-                className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50"
+                className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 cursor-pointer select-none"
               >
                 <div className="flex items-center gap-3">
                   <Users className="w-6 h-6 text-slate-600" />
@@ -1468,7 +1471,7 @@ export default function Reports() {
                     <ChevronDown className="w-5 h-5 text-gray-400" />
                   )}
                 </div>
-              </button>
+              </div>
 
               {expandedSections['customers'] && (
                 <div className="px-6 pb-6">
@@ -1524,9 +1527,10 @@ export default function Reports() {
 
           {visibleSections.outstandingInvoices && (
             <div className="bg-white rounded-lg shadow">
-              <button
+              <div
+                role="button"
                 onClick={() => toggleSection('outstanding')}
-                className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50"
+                className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 cursor-pointer select-none"
               >
                 <div className="flex items-center gap-3">
                   <FileText className="w-6 h-6 text-amber-600" />
@@ -1550,7 +1554,7 @@ export default function Reports() {
                     <ChevronDown className="w-5 h-5 text-gray-400" />
                   )}
                 </div>
-              </button>
+              </div>
 
               {expandedSections['outstanding'] && (
                 <div className="px-6 pb-6">
@@ -1614,9 +1618,10 @@ export default function Reports() {
 
           {visibleSections.paymentsLog && (
             <div className="bg-white rounded-lg shadow">
-              <button
+              <div
+                role="button"
                 onClick={() => toggleSection('paymentsLog')}
-                className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50"
+                className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 cursor-pointer select-none"
               >
                 <div className="flex items-center gap-3">
                   <DollarSign className="w-6 h-6 text-emerald-600" />
@@ -1640,7 +1645,7 @@ export default function Reports() {
                     <ChevronDown className="w-5 h-5 text-gray-400" />
                   )}
                 </div>
-              </button>
+              </div>
 
               {expandedSections['paymentsLog'] && (
                 <div className="px-6 pb-6">
@@ -1751,9 +1756,10 @@ export default function Reports() {
 
           {visibleSections.invoiceList && (
             <div className="bg-white rounded-lg shadow">
-              <button
+              <div
+                role="button"
                 onClick={() => toggleSection('documents')}
-                className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50"
+                className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 cursor-pointer select-none"
               >
                 <div className="flex items-center gap-3">
                   <Calendar className="w-6 h-6 text-emerald-600" />
@@ -1777,7 +1783,7 @@ export default function Reports() {
                     <ChevronDown className="w-5 h-5 text-gray-400" />
                   )}
                 </div>
-              </button>
+              </div>
 
               {expandedSections['documents'] && (
                 <div className="px-6 pb-6">
