@@ -273,18 +273,24 @@ export default function Reports() {
   const fetchAllReportData = async (from = dateFrom, to = dateTo, currency = selectedCurrency) => {
     if (!companyId) return;
     setLoading(true);
-    await Promise.all([
-      fetchRevenueData(from, to, currency),
-      fetchCustomerData(from, to, currency),
-      fetchOutstandingData(from, to, currency),
-      fetchDocumentData(from, to, currency),
-      fetchProfitLossData(from, to, currency),
-      fetchPaymentsLog(from, to, currency)
-    ]);
-    setLoading(false);
+    try {
+      await Promise.all([
+        fetchRevenueData(from, to, currency),
+        fetchCustomerData(from, to, currency),
+        fetchOutstandingData(from, to, currency),
+        fetchDocumentData(from, to, currency),
+        fetchProfitLossData(from, to, currency),
+        fetchPaymentsLog(from, to, currency)
+      ]);
+    } catch (err) {
+      console.error("Promise.all failed in fetchAllReportData:", err);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleApplyFilters = () => {
+    console.log("Applying filters:", { tempDateFrom, tempDateTo, tempSelectedCurrency });
     setDateFrom(tempDateFrom);
     setDateTo(tempDateTo);
     setSelectedCurrency(tempSelectedCurrency);
@@ -316,7 +322,9 @@ export default function Reports() {
     }
 
     const { data, error } = await query as { data: any[] | null, error: any };
-    if (!error && data) {
+    if (error) {
+      console.error("fetchRevenueData database error:", error);
+    } else if (data) {
       const filtered = data.filter(item => {
         const itemYear = Number(item.year);
         const itemMonth = Number(item.month);
@@ -331,11 +339,15 @@ export default function Reports() {
   const fetchCustomerData = async (from = dateFrom, to = dateTo, currency = selectedCurrency) => {
     if (!companyId) return;
     // 1. Fetch customer emails and created_at
-    const { data: customers } = await supabase
+    const { data: customers, error: custError } = await supabase
       .from('customers')
       .select('id, email, created_at')
       .eq('company_id', companyId)
-      .is('deleted_at', null) as { data: any[] | null };
+      .is('deleted_at', null) as { data: any[] | null, error: any };
+
+    if (custError) {
+      console.error("fetchCustomerData (customers query) database error:", custError);
+    }
 
     const emailMap: Record<string, string> = {};
     const createdAtMap: Record<string, string> = {};
@@ -361,6 +373,9 @@ export default function Reports() {
 
     const { data: invoices, error: invError } = await query as { data: any[] | null, error: any };
     if (invError || !invoices) {
+      if (invError) {
+        console.error("fetchCustomerData (invoices query) database error:", invError);
+      }
       setCustomerData([]);
       return;
     }
@@ -370,12 +385,16 @@ export default function Reports() {
 
     if (invoiceIds.length > 0) {
       // 3. Fetch payments for these invoices
-      const { data: payments } = await supabase
+      const { data: payments, error: payError } = await supabase
         .from('payments')
         .select('document_id, amount')
         .in('document_id', invoiceIds)
         .eq('company_id', companyId)
-        .is('deleted_at', null) as { data: any[] | null };
+        .is('deleted_at', null) as { data: any[] | null, error: any };
+
+      if (payError) {
+        console.error("fetchCustomerData (payments query) database error:", payError);
+      }
 
       if (payments) {
         payments.forEach(p => {
@@ -440,7 +459,9 @@ export default function Reports() {
     }
 
     const { data, error } = await query as { data: any[] | null, error: any };
-    if (!error && data) {
+    if (error) {
+      console.error("fetchOutstandingData database error:", error);
+    } else if (data) {
       setOutstandingData(data);
     }
   };
@@ -461,7 +482,9 @@ export default function Reports() {
     }
 
     const { data, error } = await query;
-    if (!error && data) {
+    if (error) {
+      console.error("fetchDocumentData database error:", error);
+    } else if (data) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const documentIds = (data as any[]).map(d => d.document_id);
       
@@ -669,7 +692,9 @@ export default function Reports() {
     }
 
     const { data, error } = await query;
-    if (!error && data) {
+    if (error) {
+      console.error("fetchPaymentsLog database error:", error);
+    } else if (data) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const formatted: PaymentLogEntry[] = (data as any[]).map(p => ({
         id: p.id,
@@ -784,7 +809,9 @@ export default function Reports() {
     }
 
     const { data, error } = await query as { data: any[] | null, error: any };
-    if (!error && data) {
+    if (error) {
+      console.error("fetchProfitLossData database error:", error);
+    } else if (data) {
       const filtered = data.filter(item => {
         const itemYear = Number(item.year);
         const itemMonth = Number(item.month);
