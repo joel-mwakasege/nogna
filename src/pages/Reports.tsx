@@ -1032,7 +1032,7 @@ export default function Reports() {
   const exportStatementPDF = async () => {
     const element = document.getElementById('financial-statement-doc');
     if (!element) {
-      alert('Error: Statement element "#financial-statement-doc" not found on page.');
+      alert('Statement document element not found.');
       return;
     }
 
@@ -1048,29 +1048,8 @@ export default function Reports() {
       }
 
       if (typeof html2pdfFn !== 'function') {
-        throw new Error('html2pdf library could not be initialized.');
+        throw new Error('html2pdf library is unavailable.');
       }
-
-      // Pre-sanitize color converter canvas to convert modern color functions (color(), oklch) into standard RGB
-      const canvasHelper = document.createElement('canvas');
-      canvasHelper.width = 1;
-      canvasHelper.height = 1;
-      const ctxHelper = canvasHelper.getContext('2d');
-
-      const sanitizeColor = (val: string): string => {
-        if (!val || val === 'transparent' || val === 'inherit' || val === 'initial' || val === 'currentColor') return val;
-        if (!val.includes('color(') && !val.includes('oklch') && !val.includes('lab') && !val.includes('color-mix')) return val;
-        try {
-          if (ctxHelper) {
-            ctxHelper.fillStyle = '#000000';
-            ctxHelper.fillStyle = val;
-            return ctxHelper.fillStyle;
-          }
-        } catch {
-          return '#111827';
-        }
-        return val;
-      };
 
       const opt = {
         margin: 5,
@@ -1083,50 +1062,53 @@ export default function Reports() {
           logging: false,
           scrollY: 0,
           onclone: (clonedDoc: Document) => {
-            const printable = clonedDoc.getElementById('financial-statement-doc');
-            if (printable) {
-              printable.style.boxShadow = 'none';
-              printable.style.border = 'none';
-              printable.style.borderRadius = '0px';
+            const docEl = clonedDoc.getElementById('financial-statement-doc');
+            if (docEl) {
+              docEl.style.boxShadow = 'none';
+              docEl.style.border = 'none';
+              docEl.style.borderRadius = '0';
+              docEl.style.padding = '0';
+              docEl.style.margin = '0';
+              docEl.style.width = '100%';
 
-              // Sanitize modern CSS color formats across all elements in the clone
-              const allNodes = printable.querySelectorAll('*');
-              allNodes.forEach((node) => {
+              // Replace any modern CSS color functions across all elements in the cloned tree
+              const elements = docEl.querySelectorAll('*');
+              elements.forEach((node) => {
                 const el = node as HTMLElement;
                 if (!el.style) return;
-                
                 el.style.boxShadow = 'none';
                 el.style.textShadow = 'none';
 
-                const computed = window.getComputedStyle(el);
-                if (computed) {
-                  if (computed.color && (computed.color.includes('color(') || computed.color.includes('oklch') || computed.color.includes('color-mix'))) {
-                    el.style.color = sanitizeColor(computed.color);
+                try {
+                  const comp = window.getComputedStyle(el);
+                  if (comp.color && (comp.color.includes('color(') || comp.color.includes('oklch') || comp.color.includes('color-mix'))) {
+                    el.style.color = '#111827';
                   }
-                  if (computed.backgroundColor && (computed.backgroundColor.includes('color(') || computed.backgroundColor.includes('oklch') || computed.backgroundColor.includes('color-mix'))) {
-                    el.style.backgroundColor = sanitizeColor(computed.backgroundColor);
+                  if (comp.backgroundColor && (comp.backgroundColor.includes('color(') || comp.backgroundColor.includes('oklch') || comp.backgroundColor.includes('color-mix'))) {
+                    el.style.backgroundColor = '#ffffff';
                   }
-                  if (computed.borderColor && (computed.borderColor.includes('color(') || computed.borderColor.includes('oklch') || computed.borderColor.includes('color-mix'))) {
-                    el.style.borderColor = sanitizeColor(computed.borderColor);
+                  if (comp.borderColor && (comp.borderColor.includes('color(') || comp.borderColor.includes('oklch') || comp.borderColor.includes('color-mix'))) {
+                    el.style.borderColor = '#e5e7eb';
                   }
+                } catch {
+                  // Ignore
                 }
               });
             }
           }
         },
         jsPDF: { orientation: 'portrait', unit: 'mm', format: 'a4', compress: true },
-        pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
+        pagebreak: { mode: 'css' }
       };
 
       await html2pdfFn().from(element).set(opt).save();
     } catch (err: any) {
-      console.error('PDF export failed with error details:', err);
-      const detailedMessage = err?.message || (typeof err === 'string' ? err : JSON.stringify(err)) || 'Unknown canvas/PDF rendering error';
-      
-      const shouldPrint = window.confirm(
-        'PDF Export Notice: ' + detailedMessage + '\n\nWould you like to open the browser Print dialog to save the statement directly as a clean PDF?'
+      console.error('PDF export error details:', err);
+      const detailedMessage = err?.message || String(err) || 'Rendering error';
+      const proceedPrint = window.confirm(
+        'PDF Export Notice: ' + detailedMessage + '\n\nWould you like to print or save the statement as PDF via the system print dialog?'
       );
-      if (shouldPrint) {
+      if (proceedPrint) {
         window.print();
       }
     }
@@ -1408,7 +1390,7 @@ export default function Reports() {
               </div>
             </div>
 
-            {/* Printable Document Sheet Container - Adopts system font family from company settings */}
+            {/* Printable Document Sheet Container */}
             <div 
               id="financial-statement-doc" 
               className="bg-white rounded-xl border border-gray-200 p-6 sm:p-10 space-y-8"
@@ -1421,7 +1403,7 @@ export default function Reports() {
               
               {/* Dynamic Letterhead Banner from Settings */}
               {companySettings?.letterhead_url ? (
-                <div className="-mx-6 sm:-mx-10 -mt-6 sm:-mt-10 mb-6 overflow-hidden rounded-t-xl" id="letterhead-container">
+                <div id="letterhead-container" style={{ width: '100%', margin: '0 0 20px 0', padding: 0, overflow: 'hidden' }}>
                   <img
                     id="letterhead-image"
                     src={companySettings.letterhead_url}
