@@ -14,7 +14,9 @@ import {
   FileSpreadsheet,
   FileDown,
   LayoutDashboard,
-  Coins
+  Coins,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
@@ -128,6 +130,7 @@ interface ExpenseRow {
 }
 
 interface CompanySettings {
+  id?: string;
   company_name: string | null;
   logo_url: string | null;
   letterhead_url: string | null;
@@ -137,6 +140,9 @@ interface CompanySettings {
   phone: string | null;
   email: string | null;
   currency?: string | null;
+  font_family?: string | null;
+  font_size?: string | null;
+  primary_color?: string | null;
 }
 
 interface CurrencyFinancialStatement {
@@ -374,6 +380,7 @@ export default function Reports() {
 
     if (!error && data) {
       setCompanySettings({
+        ...data,
         company_name: data.company_name || data.name || '',
         logo_url: data.logo_url || null,
         letterhead_url: data.letterhead_url || data.invoice_letterhead_url || data.header_url || null,
@@ -382,7 +389,10 @@ export default function Reports() {
         city: data.city || '',
         phone: data.phone || data.contact || '',
         email: data.email || '',
-        currency: data.currency || null
+        currency: data.currency || null,
+        font_family: data.font_family || data.font || 'inherit',
+        font_size: data.font_size || 'inherit',
+        primary_color: data.primary_color || '#000000'
       });
     }
   };
@@ -996,14 +1006,22 @@ export default function Reports() {
 
     try {
       const opt = {
-        margin: 5,
+        margin:,
         filename: 'Financial_Statement_' + activeStatementCurrency + '_' + dateFrom + '_to_' + dateTo + '.pdf',
         image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff', scrollY: 0 },
+        html2canvas: { 
+          scale: 2, 
+          useCORS: true, 
+          allowTaint: true,
+          logging: false,
+          scrollY: 0 
+        },
         jsPDF: { orientation: 'portrait', unit: 'mm', format: 'a4', compress: true },
         pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
       };
-      await html2pdf().set(opt).from(element).save();
+
+      const html2pdfLib = typeof html2pdf === 'function' ? html2pdf : (window as any).html2pdf || (html2pdf as any).default;
+      await html2pdfLib().from(element).set(opt).save();
     } catch (err) {
       console.error('PDF export failed:', err);
       alert('Failed to export PDF. Please try again.');
@@ -1090,13 +1108,13 @@ export default function Reports() {
   if (initialLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
-        <div className="text-gray-500 font-sans">Loading reports...</div>
+        <div className="text-gray-500">Loading reports...</div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8 font-sans antialiased text-gray-900">
+    <div className="min-h-screen bg-gray-50 py-8 text-gray-900">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         
         {/* Top Header */}
@@ -1235,7 +1253,7 @@ export default function Reports() {
                   }`}
                   title="Toggle visibility of line items with zero amount"
                 >
-                  <span className={`w-2 h-2 rounded-full ${hideZeroItems ? 'bg-emerald-400' : 'bg-gray-400'}`} />
+                  {hideZeroItems ? <EyeOff className="w-3.5 h-3.5 text-emerald-400" /> : <Eye className="w-3.5 h-3.5 text-gray-400" />}
                   <span>{hideZeroItems ? 'Zero Items Hidden' : 'Showing All Items'}</span>
                 </button>
               </div>
@@ -1252,8 +1270,16 @@ export default function Reports() {
               </div>
             </div>
 
-            {/* Printable Document Sheet Container */}
-            <div id="financial-statement-doc" className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 sm:p-10 space-y-8 font-sans">
+            {/* Printable Document Sheet Container - Adopts system font family from company settings */}
+            <div 
+              id="financial-statement-doc" 
+              className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 sm:p-10 space-y-8"
+              style={{
+                fontFamily: companySettings?.font_family && companySettings.font_family !== 'inherit' 
+                  ? companySettings.font_family 
+                  : undefined
+              }}
+            >
               
               {/* Dynamic Letterhead Banner from Settings */}
               {companySettings?.letterhead_url ? (
@@ -1261,6 +1287,7 @@ export default function Reports() {
                   <img
                     id="letterhead-image"
                     src={companySettings.letterhead_url}
+                    crossOrigin="anonymous"
                     alt="Letterhead"
                     className="block w-full h-auto"
                     style={{ width: '100%', height: 'auto', display: 'block' }}
@@ -1270,7 +1297,7 @@ export default function Reports() {
                 <div className="border-b border-gray-900 pb-4 flex justify-between items-start">
                   <div>
                     {companySettings?.logo_url && (
-                      <img src={companySettings.logo_url} alt="Logo" className="h-12 object-contain mb-2" />
+                      <img src={companySettings.logo_url} crossOrigin="anonymous" alt="Logo" className="h-12 object-contain mb-2" />
                     )}
                     <h2 className="text-xl font-bold uppercase tracking-wider text-gray-900">
                       {companySettings?.company_name || 'Financial Statement'}
@@ -1280,9 +1307,9 @@ export default function Reports() {
                     </p>
                   </div>
                   <div className="text-right">
-                    <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400 block">STATEMENT</span>
+                    <span className="text-xs font-bold uppercase tracking-widest text-gray-400 block">STATEMENT</span>
                     <h1 className="text-lg font-black tracking-tight text-gray-900">PROFIT & LOSS REPORT</h1>
-                    <p className="text-xs text-gray-600 mt-1 font-mono">{dateFrom} to {dateTo}</p>
+                    <p className="text-xs text-gray-600 mt-1">{dateFrom} to {dateTo}</p>
                   </div>
                 </div>
               )}
@@ -1300,17 +1327,17 @@ export default function Reports() {
 
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                   {/* Left Column: Revenue & COGS */}
-                  <div className="border border-gray-200 rounded-lg p-4 space-y-4 text-xs font-sans">
+                  <div className="border border-gray-200 rounded-lg p-4 space-y-4 text-xs">
                     <div>
                       <div className="font-bold text-gray-900 uppercase tracking-wider border-b border-gray-200 pb-1.5 text-xs">Revenue</div>
                       <div className="mt-2 space-y-1.5">
                         <div className="flex justify-between py-0.5">
                           <span className="text-gray-600">Sale Revenue ({activeStatementCurrency})</span>
-                          <span className="font-semibold text-gray-900 font-mono">{formatCurrency(currentStatement.totalSalesRevenue, activeStatementCurrency)}</span>
+                          <span className="font-semibold text-gray-900">{formatCurrency(currentStatement.totalSalesRevenue, activeStatementCurrency)}</span>
                         </div>
                         <div className="flex justify-between font-bold border-t border-gray-200 pt-2 text-emerald-700">
                           <span>Total Revenue</span>
-                          <span className="font-mono">{formatCurrency(currentStatement.totalSalesRevenue, activeStatementCurrency)}</span>
+                          <span>{formatCurrency(currentStatement.totalSalesRevenue, activeStatementCurrency)}</span>
                         </div>
                       </div>
                     </div>
@@ -1326,7 +1353,7 @@ export default function Reports() {
                           return items.map(([cat, amt]) => (
                             <div key={cat} className="flex justify-between py-0.5">
                               <span className="text-gray-600">{cat}</span>
-                              <span className={`font-mono font-medium ${amt > 0 ? 'text-gray-900 font-semibold' : 'text-gray-400'}`}>
+                              <span className={`font-medium ${amt > 0 ? 'text-gray-900 font-semibold' : 'text-gray-400'}`}>
                                 {formatCurrency(amt, activeStatementCurrency)}
                               </span>
                             </div>
@@ -1334,19 +1361,19 @@ export default function Reports() {
                         })()}
                         <div className="flex justify-between font-bold border-t border-gray-200 pt-2 text-red-700">
                           <span>Total COGS</span>
-                          <span className="font-mono">{formatCurrency(currentStatement.totalCOGS, activeStatementCurrency)}</span>
+                          <span>{formatCurrency(currentStatement.totalCOGS, activeStatementCurrency)}</span>
                         </div>
                       </div>
                     </div>
 
                     <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex justify-between font-bold text-blue-900 text-xs">
                       <span className="uppercase tracking-wider">GROSS PROFIT</span>
-                      <span className="font-mono">{formatCurrency(currentStatement.grossProfit, activeStatementCurrency)}</span>
+                      <span>{formatCurrency(currentStatement.grossProfit, activeStatementCurrency)}</span>
                     </div>
                   </div>
 
                   {/* Right Column: Operating & Admin Expenses */}
-                  <div className="border border-gray-200 rounded-lg p-4 space-y-4 text-xs font-sans">
+                  <div className="border border-gray-200 rounded-lg p-4 space-y-4 text-xs">
                     <div>
                       <div className="font-bold text-gray-900 uppercase tracking-wider border-b border-gray-200 pb-1.5 text-xs">Operating Expenses</div>
                       <div className="mt-2 space-y-1.5">
@@ -1358,7 +1385,7 @@ export default function Reports() {
                           return items.map(([cat, amt]) => (
                             <div key={cat} className="flex justify-between py-0.5">
                               <span className="text-gray-600">{cat}</span>
-                              <span className={`font-mono font-medium ${amt > 0 ? 'text-gray-900 font-semibold' : 'text-gray-400'}`}>
+                              <span className={`font-medium ${amt > 0 ? 'text-gray-900 font-semibold' : 'text-gray-400'}`}>
                                 {formatCurrency(amt, activeStatementCurrency)}
                               </span>
                             </div>
@@ -1367,7 +1394,7 @@ export default function Reports() {
                       </div>
                       <div className="flex justify-between font-bold border-t border-gray-200 pt-2 text-gray-900 mt-1">
                         <span>Total Operating Expenses</span>
-                        <span className="font-mono">{formatCurrency(currentStatement.totalOperating, activeStatementCurrency)}</span>
+                        <span>{formatCurrency(currentStatement.totalOperating, activeStatementCurrency)}</span>
                       </div>
                     </div>
 
@@ -1382,7 +1409,7 @@ export default function Reports() {
                           return items.map(([cat, amt]) => (
                             <div key={cat} className="flex justify-between py-0.5">
                               <span className="text-gray-600">{cat}</span>
-                              <span className={`font-mono font-medium ${amt > 0 ? 'text-gray-900 font-semibold' : 'text-gray-400'}`}>
+                              <span className={`font-medium ${amt > 0 ? 'text-gray-900 font-semibold' : 'text-gray-400'}`}>
                                 {formatCurrency(amt, activeStatementCurrency)}
                               </span>
                             </div>
@@ -1391,7 +1418,7 @@ export default function Reports() {
                       </div>
                       <div className="flex justify-between font-bold border-t border-gray-200 pt-2 text-gray-900 mt-1">
                         <span>Total Admin Expenses</span>
-                        <span className="font-mono">{formatCurrency(currentStatement.totalAdmin, activeStatementCurrency)}</span>
+                        <span>{formatCurrency(currentStatement.totalAdmin, activeStatementCurrency)}</span>
                       </div>
                     </div>
 
@@ -1399,7 +1426,7 @@ export default function Reports() {
                       currentStatement.profitBeforeTax >= 0 ? 'bg-emerald-50 border-emerald-200 text-emerald-900' : 'bg-red-50 border-red-200 text-red-900'
                     }`}>
                       <span className="uppercase tracking-wider">PROFIT BEFORE TAX</span>
-                      <span className="font-mono">{formatCurrency(currentStatement.profitBeforeTax, activeStatementCurrency)}</span>
+                      <span>{formatCurrency(currentStatement.profitBeforeTax, activeStatementCurrency)}</span>
                     </div>
                   </div>
                 </div>
@@ -1411,11 +1438,11 @@ export default function Reports() {
                   <h3 className="text-sm font-bold uppercase tracking-wider text-gray-900">
                     2. Invoices Main (Monthly Invoice Ledger)
                   </h3>
-                  <span className="text-xs text-gray-500 font-sans">{documentData.length} invoices recorded</span>
+                  <span className="text-xs text-gray-500">{documentData.length} invoices recorded</span>
                 </div>
 
                 <div className="w-full">
-                  <table className="w-full text-[11px] font-sans border border-gray-200 divide-y divide-gray-200">
+                  <table className="w-full text-xs border border-gray-200 divide-y divide-gray-200">
                     <thead className="bg-gray-50 font-semibold text-gray-700">
                       <tr>
                         <th className="px-2 py-2 text-left">Invoice Date</th>
@@ -1434,18 +1461,18 @@ export default function Reports() {
                     <tbody className="bg-white divide-y divide-gray-100">
                       {documentData.map((item) => (
                         <tr key={item.document_id} className="hover:bg-gray-50">
-                          <td className="px-2 py-1.5 whitespace-nowrap text-gray-900 font-mono">{formatDate(item.issue_date)}</td>
+                          <td className="px-2 py-1.5 whitespace-nowrap text-gray-900">{formatDate(item.issue_date)}</td>
                           <td className="px-1.5 py-1.5 font-bold text-gray-500">{item.currency}</td>
                           <td className="px-2 py-1.5 font-medium text-gray-900">{item.customer_name}</td>
                           <td className="px-2 py-1.5 text-gray-600">{item.project_events || '—'}</td>
                           <td className="px-2 py-1.5 text-gray-600">{item.location || '—'}</td>
                           <td className="px-2 py-1.5 font-medium text-blue-700">{item.document_number}</td>
-                          <td className="px-1.5 py-1.5 text-right text-gray-500 font-mono">{(item.tax_percent || 0).toFixed(2)}%</td>
-                          <td className="px-2 py-1.5 text-right font-mono font-semibold text-gray-900">{formatCurrency(item.total_amount, item.currency)}</td>
-                          <td className="px-2 py-1.5 text-right font-mono text-emerald-700">{formatCurrency(item.paid || 0, item.currency)}</td>
-                          <td className="px-2 py-1.5 text-right font-mono font-semibold text-amber-700">{formatCurrency(item.balance || 0, item.currency)}</td>
+                          <td className="px-1.5 py-1.5 text-right text-gray-500">{(item.tax_percent || 0).toFixed(2)}%</td>
+                          <td className="px-2 py-1.5 text-right font-semibold text-gray-900">{formatCurrency(item.total_amount, item.currency)}</td>
+                          <td className="px-2 py-1.5 text-right text-emerald-700">{formatCurrency(item.paid || 0, item.currency)}</td>
+                          <td className="px-2 py-1.5 text-right font-semibold text-amber-700">{formatCurrency(item.balance || 0, item.currency)}</td>
                           <td className="px-1.5 py-1.5 text-center">
-                            <span className={`inline-block px-1.5 py-0.5 text-[9px] font-bold rounded ${
+                            <span className={`inline-block px-1.5 py-0.5 text-xs font-bold rounded ${
                               item.status === 'paid' ? 'bg-emerald-100 text-emerald-800' :
                               item.status === 'partially_paid' ? 'bg-amber-100 text-amber-800' :
                               'bg-red-100 text-red-800'
@@ -1460,9 +1487,9 @@ export default function Reports() {
                       {Object.entries(invoiceTotalsByCurrency).map(([curr, totals]) => (
                         <tr key={curr}>
                           <td colSpan={7} className="px-2 py-2 text-right uppercase text-gray-700 text-xs">Total ({curr}):</td>
-                          <td className="px-2 py-2 text-right font-mono text-gray-900">{formatCurrency(totals.total, curr)}</td>
-                          <td className="px-2 py-2 text-right font-mono text-emerald-700">{formatCurrency(totals.paid, curr)}</td>
-                          <td className="px-2 py-2 text-right font-mono text-amber-700">{formatCurrency(totals.balance, curr)}</td>
+                          <td className="px-2 py-2 text-right text-gray-900">{formatCurrency(totals.total, curr)}</td>
+                          <td className="px-2 py-2 text-right text-emerald-700">{formatCurrency(totals.paid, curr)}</td>
+                          <td className="px-2 py-2 text-right text-amber-700">{formatCurrency(totals.balance, curr)}</td>
                           <td></td>
                         </tr>
                       ))}
@@ -1474,17 +1501,17 @@ export default function Reports() {
                 <div className="flex justify-end mt-4">
                   <div className="w-full max-w-sm space-y-3">
                     {Object.entries(invoiceTotalsByCurrency).map(([curr, totals]) => (
-                      <div key={curr} className="bg-[#f2f7f0] border border-[#a9d18e] rounded-lg p-3.5 font-sans text-xs text-gray-800 shadow-sm">
+                      <div key={curr} className="bg-[#f2f7f0] border border-[#a9d18e] rounded-lg p-3.5 text-xs text-gray-800 shadow-sm">
                         <div className="font-bold text-[#375623] mb-2 border-b border-[#a9d18e] pb-1 uppercase flex justify-between text-xs tracking-wider">
                           <span>{curr} Summary</span>
                           <span>Invoiced</span>
                         </div>
-                        <div className="grid grid-cols-2 gap-y-1.5 font-mono">
-                          <div className="font-bold text-[#375623] font-sans">Total sales:</div>
+                        <div className="grid grid-cols-2 gap-y-1.5">
+                          <div className="font-bold text-[#375623]">Total sales:</div>
                           <div className="text-right font-bold text-[#375623]">{formatCurrency(totals.total, curr)}</div>
-                          <div className="font-bold text-[#375623] font-sans">Paid:</div>
+                          <div className="font-bold text-[#375623]">Paid:</div>
                           <div className="text-right font-bold text-[#375623]">{formatCurrency(totals.paid, curr)}</div>
-                          <div className="font-bold text-[#375623] font-sans">Unpaid:</div>
+                          <div className="font-bold text-[#375623]">Unpaid:</div>
                           <div className="text-right font-bold text-[#375623]">{formatCurrency(totals.balance, curr)}</div>
                         </div>
                       </div>
