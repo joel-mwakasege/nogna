@@ -384,6 +384,7 @@ export default function Reports() {
   const fetchExpensesData = async (from = dateFrom, to = dateTo) => {
     if (!companyId) return;
 
+    // 1. Fetch category definitions
     const { data: catData } = await supabase
       .from('expense_categories')
       .select('id, name, classification, color, is_active')
@@ -392,6 +393,7 @@ export default function Reports() {
 
     if (catData) setCategoriesList(catData as ExpenseCategoryItem[]);
 
+    // 2. Fetch expenses using exact database column names
     let query = supabase
       .from('expenses')
       .select('id, expense_date, expense_category_id, payment_category_id, currency_id, amount, description, notes')
@@ -1251,7 +1253,7 @@ export default function Reports() {
             {/* Printable Document Sheet Container */}
             <div id="financial-statement-doc" className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 sm:p-10 space-y-8">
               
-              {/* Clean Letterhead Banner (Exact natural aspect ratio, no squishing) */}
+              {/* Clean Letterhead Banner */}
               {companySettings?.letterhead_url ? (
                 <div className="-mx-6 sm:-mx-10 -mt-6 sm:-mt-10 mb-6 overflow-hidden rounded-t-xl" id="letterhead-container">
                   <img
