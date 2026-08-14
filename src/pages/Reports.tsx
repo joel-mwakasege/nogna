@@ -286,8 +286,9 @@ export default function Reports() {
   const [expensesData, setExpensesData] = useState<ExpenseRow[]>([]);
   const [companySettings, setCompanySettings] = useState<CompanySettings | null>(null);
 
-  // Active statement currency pill tab
+  // Active statement currency pill tab & zero items toggle
   const [activeStatementCurrency, setActiveStatementCurrency] = useState<string>('');
+  const [hideZeroItems, setHideZeroItems] = useState<boolean>(true);
 
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     profitloss: true,
@@ -365,13 +366,25 @@ export default function Reports() {
 
   const fetchCompanySettings = async () => {
     if (!companyId) return;
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('company_settings')
-      .select('company_name, logo_url, letterhead_url, address_line1, address_line2, city, phone, email, currency')
+      .select('*')
       .eq('company_id', companyId)
       .maybeSingle();
 
-    if (data) setCompanySettings(data);
+    if (!error && data) {
+      setCompanySettings({
+        company_name: data.company_name || data.name || '',
+        logo_url: data.logo_url || null,
+        letterhead_url: data.letterhead_url || data.invoice_letterhead_url || data.header_url || null,
+        address_line1: data.address_line1 || data.address || '',
+        address_line2: data.address_line2 || '',
+        city: data.city || '',
+        phone: data.phone || data.contact || '',
+        email: data.email || '',
+        currency: data.currency || null
+      });
+    }
   };
 
   const handleApplyFilters = () => {
@@ -894,7 +907,7 @@ export default function Reports() {
     const lines: string[] = [];
     const pushLine = (...cols: any[]) => lines.push(cols.map(c => `"${String(c ?? '').replace(/"/g, '""')}"`).join(','));
 
-    pushLine(companySettings?.company_name || 'KILIMANJARO AUDIO VISUAL SERVICE');
+    pushLine(companySettings?.company_name || 'Financial Statement');
     pushLine('SIMPLE FINANCIAL STATEMENT', `${dateFrom} to ${dateTo}`);
     pushLine('');
 
@@ -909,7 +922,9 @@ export default function Reports() {
       pushLine('');
 
       pushLine('COST OF GOODS SOLD (COGS)');
-      Object.entries(stat.cogsBreakdown).forEach(([k, v]) => pushLine(k, v));
+      Object.entries(stat.cogsBreakdown)
+        .filter(([_, v]) => !hideZeroItems || v > 0)
+        .forEach(([k, v]) => pushLine(k, v));
       pushLine('Total COGS', '', stat.totalCOGS);
       pushLine('');
 
@@ -920,12 +935,16 @@ export default function Reports() {
       pushLine('');
 
       pushLine('OPERATING EXPENSES');
-      Object.entries(stat.operatingBreakdown).forEach(([k, v]) => pushLine(k, v));
+      Object.entries(stat.operatingBreakdown)
+        .filter(([_, v]) => !hideZeroItems || v > 0)
+        .forEach(([k, v]) => pushLine(k, v));
       pushLine('Total Operating Expenses', '', stat.totalOperating);
       pushLine('');
 
       pushLine('ADMINISTRATIVE & TAX EXPENSES');
-      Object.entries(stat.adminBreakdown).forEach(([k, v]) => pushLine(k, v));
+      Object.entries(stat.adminBreakdown)
+        .filter(([_, v]) => !hideZeroItems || v > 0)
+        .forEach(([k, v]) => pushLine(k, v));
       pushLine('Total Administrative Expenses', '', stat.totalAdmin);
       pushLine('Total Operating & Admin Expenses', '', stat.totalExpenses);
       pushLine('');
@@ -1182,24 +1201,43 @@ export default function Reports() {
           <div className="space-y-6">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
               
-              {/* Multi-Currency Pill Switcher */}
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1">
-                  <Coins className="w-3.5 h-3.5" /> Currency View:
-                </span>
-                {activeCurrenciesInPeriod.map(curr => (
-                  <button
-                    key={curr}
-                    onClick={() => setActiveStatementCurrency(curr)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                      activeStatementCurrency === curr
-                        ? 'bg-black text-white shadow-sm ring-2 ring-black ring-offset-1'
-                        : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50'
-                    }`}
-                  >
-                    {curr}
-                  </button>
-                ))}
+              {/* Multi-Currency Pill Switcher & Display Options */}
+              <div className="flex items-center gap-3 flex-wrap">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1 mr-1">
+                    <Coins className="w-3.5 h-3.5" /> Currency:
+                  </span>
+                  {activeCurrenciesInPeriod.map(curr => (
+                    <button
+                      key={curr}
+                      onClick={() => setActiveStatementCurrency(curr)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                        activeStatementCurrency === curr
+                          ? 'bg-black text-white shadow-sm ring-2 ring-black ring-offset-1'
+                          : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50'
+                      }`}
+                    >
+                      {curr}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="h-4 w-px bg-gray-300 hidden sm:block" />
+
+                {/* Hide / Show Zero Items Toggle */}
+                <button
+                  type="button"
+                  onClick={() => setHideZeroItems(!hideZeroItems)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                    hideZeroItems
+                      ? 'bg-slate-800 text-white shadow-sm'
+                      : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50'
+                  }`}
+                  title="Toggle visibility of line items with zero amount"
+                >
+                  <span className={`w-2 h-2 rounded-full ${hideZeroItems ? 'bg-emerald-400' : 'bg-gray-400'}`} />
+                  <span>{hideZeroItems ? 'Zero Items Hidden' : 'Showing All Items'}</span>
+                </button>
               </div>
 
               <div className="flex gap-2 w-full sm:w-auto">
@@ -1217,7 +1255,7 @@ export default function Reports() {
             {/* Printable Document Sheet Container */}
             <div id="financial-statement-doc" className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 sm:p-10 space-y-8 font-sans">
               
-              {/* Clean Letterhead Banner */}
+              {/* Dynamic Letterhead Banner from Settings */}
               {companySettings?.letterhead_url ? (
                 <div className="-mx-6 sm:-mx-10 -mt-6 sm:-mt-10 mb-6 overflow-hidden rounded-t-xl" id="letterhead-container">
                   <img
@@ -1235,15 +1273,15 @@ export default function Reports() {
                       <img src={companySettings.logo_url} alt="Logo" className="h-12 object-contain mb-2" />
                     )}
                     <h2 className="text-xl font-bold uppercase tracking-wider text-gray-900">
-                      {companySettings?.company_name || 'KILIMANJARO AUDIO VISUAL SERVICE'}
+                      {companySettings?.company_name || 'Financial Statement'}
                     </h2>
                     <p className="text-xs text-gray-500 mt-1">
                       {[companySettings?.address_line1, companySettings?.city, companySettings?.phone].filter(Boolean).join(' • ')}
                     </p>
                   </div>
                   <div className="text-right">
-                    <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400 block">DOCUMENT</span>
-                    <h1 className="text-lg font-black tracking-tight text-gray-900">SIMPLE FINANCIAL STATEMENT</h1>
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400 block">STATEMENT</span>
+                    <h1 className="text-lg font-black tracking-tight text-gray-900">PROFIT & LOSS REPORT</h1>
                     <p className="text-xs text-gray-600 mt-1 font-mono">{dateFrom} to {dateTo}</p>
                   </div>
                 </div>
@@ -1280,18 +1318,20 @@ export default function Reports() {
                     <div>
                       <div className="font-bold text-gray-900 uppercase tracking-wider border-b border-gray-200 pb-1.5 text-xs">Cost of Goods Sold (COGS)</div>
                       <div className="mt-2 space-y-1.5">
-                        {Object.keys(currentStatement.cogsBreakdown).length > 0 ? (
-                          Object.entries(currentStatement.cogsBreakdown).map(([cat, amt]) => (
+                        {(() => {
+                          const items = Object.entries(currentStatement.cogsBreakdown).filter(([_, amt]) => !hideZeroItems || amt > 0);
+                          if (items.length === 0) {
+                            return <div className="text-gray-400 italic py-1">No direct project costs recorded.</div>;
+                          }
+                          return items.map(([cat, amt]) => (
                             <div key={cat} className="flex justify-between py-0.5">
                               <span className="text-gray-600">{cat}</span>
                               <span className={`font-mono font-medium ${amt > 0 ? 'text-gray-900 font-semibold' : 'text-gray-400'}`}>
                                 {formatCurrency(amt, activeStatementCurrency)}
                               </span>
                             </div>
-                          ))
-                        ) : (
-                          <div className="text-gray-400 italic py-1">No COGS categories configured.</div>
-                        )}
+                          ));
+                        })()}
                         <div className="flex justify-between font-bold border-t border-gray-200 pt-2 text-red-700">
                           <span>Total COGS</span>
                           <span className="font-mono">{formatCurrency(currentStatement.totalCOGS, activeStatementCurrency)}</span>
@@ -1310,18 +1350,20 @@ export default function Reports() {
                     <div>
                       <div className="font-bold text-gray-900 uppercase tracking-wider border-b border-gray-200 pb-1.5 text-xs">Operating Expenses</div>
                       <div className="mt-2 space-y-1.5">
-                        {Object.keys(currentStatement.operatingBreakdown).length > 0 ? (
-                          Object.entries(currentStatement.operatingBreakdown).map(([cat, amt]) => (
+                        {(() => {
+                          const items = Object.entries(currentStatement.operatingBreakdown).filter(([_, amt]) => !hideZeroItems || amt > 0);
+                          if (items.length === 0) {
+                            return <div className="text-gray-400 italic py-1">No operating expenses recorded.</div>;
+                          }
+                          return items.map(([cat, amt]) => (
                             <div key={cat} className="flex justify-between py-0.5">
                               <span className="text-gray-600">{cat}</span>
                               <span className={`font-mono font-medium ${amt > 0 ? 'text-gray-900 font-semibold' : 'text-gray-400'}`}>
                                 {formatCurrency(amt, activeStatementCurrency)}
                               </span>
                             </div>
-                          ))
-                        ) : (
-                          <div className="text-gray-400 italic py-1">No operating categories configured.</div>
-                        )}
+                          ));
+                        })()}
                       </div>
                       <div className="flex justify-between font-bold border-t border-gray-200 pt-2 text-gray-900 mt-1">
                         <span>Total Operating Expenses</span>
@@ -1332,18 +1374,20 @@ export default function Reports() {
                     <div>
                       <div className="font-bold text-gray-900 uppercase tracking-wider border-b border-gray-200 pb-1.5 text-xs">Administrative & Tax Expenses</div>
                       <div className="mt-2 space-y-1.5">
-                        {Object.keys(currentStatement.adminBreakdown).length > 0 ? (
-                          Object.entries(currentStatement.adminBreakdown).map(([cat, amt]) => (
+                        {(() => {
+                          const items = Object.entries(currentStatement.adminBreakdown).filter(([_, amt]) => !hideZeroItems || amt > 0);
+                          if (items.length === 0) {
+                            return <div className="text-gray-400 italic py-1">No administrative/tax expenses recorded.</div>;
+                          }
+                          return items.map(([cat, amt]) => (
                             <div key={cat} className="flex justify-between py-0.5">
                               <span className="text-gray-600">{cat}</span>
                               <span className={`font-mono font-medium ${amt > 0 ? 'text-gray-900 font-semibold' : 'text-gray-400'}`}>
                                 {formatCurrency(amt, activeStatementCurrency)}
                               </span>
                             </div>
-                          ))
-                        ) : (
-                          <div className="text-gray-400 italic py-1">No admin categories configured.</div>
-                        )}
+                          ));
+                        })()}
                       </div>
                       <div className="flex justify-between font-bold border-t border-gray-200 pt-2 text-gray-900 mt-1">
                         <span>Total Admin Expenses</span>
