@@ -110,6 +110,23 @@ interface ExpenseCategoryItem {
   is_active?: boolean;
 }
 
+interface CurrencyItem {
+  id: string;
+  code: string;
+  symbol: string;
+}
+
+interface ExpenseRow {
+  id: string;
+  expense_date: string;
+  expense_category_id: string | null;
+  payment_category_id: string | null;
+  currency_id: string | null;
+  amount: number;
+  description: string | null;
+  notes: string | null;
+}
+
 interface CompanySettings {
   company_name: string | null;
   logo_url: string | null;
@@ -252,7 +269,7 @@ export default function Reports() {
   const [dateFrom, setDateFrom] = useState(tempDateFrom);
   const [dateTo, setDateTo] = useState(tempDateTo);
   const [selectedCurrency, setSelectedCurrency] = useState(tempSelectedCurrency);
-  const [currencies, setCurrencies] = useState<Array<{ code: string; symbol: string }>>([]);
+  const [currencies, setCurrencies] = useState<CurrencyItem[]>([]);
 
   // Data collections
   const [revenueData, setRevenueData] = useState<RevenueByPeriod[]>([]);
@@ -262,7 +279,7 @@ export default function Reports() {
   const [profitLossData, setProfitLossData] = useState<ProfitAndLoss[]>([]);
   const [paymentsLogData, setPaymentsLogData] = useState<PaymentLogEntry[]>([]);
   const [categoriesList, setCategoriesList] = useState<ExpenseCategoryItem[]>([]);
-  const [expensesData, setExpensesData] = useState<any[]>([]);
+  const [expensesData, setExpensesData] = useState<ExpenseRow[]>([]);
   const [companySettings, setCompanySettings] = useState<CompanySettings | null>(null);
 
   // Active statement currency pill tab
@@ -313,11 +330,11 @@ export default function Reports() {
   const fetchCurrencies = async () => {
     const { data } = await supabase
       .from('currencies')
-      .select('code, symbol')
+      .select('id, code, symbol')
       .order('code');
 
     if (data && data.length > 0) {
-      setCurrencies(data);
+      setCurrencies(data as CurrencyItem[]);
     }
   };
 
@@ -333,7 +350,7 @@ export default function Reports() {
         fetchDocumentData(from, to, currency),
         fetchProfitLossData(from, to, currency),
         fetchPaymentsLog(from, to, currency),
-        fetchExpensesData(from, to, currency)
+        fetchExpensesData(from, to)
       ]);
     } catch (err) {
       console.error("fetchAllReportData error:", err);
@@ -364,21 +381,22 @@ export default function Reports() {
     fetchAllReportData(dateFrom, dateTo, selectedCurrency);
   };
 
-  const fetchExpensesData = async (from = dateFrom, to = dateTo, currency = selectedCurrency) => {
+  const fetchExpensesData = async (from = dateFrom, to = dateTo) => {
     if (!companyId) return;
 
-    // 1. Fetch categories
+    // 1. Fetch category definitions
     const { data: catData } = await supabase
       .from('expense_categories')
-      .select('*')
-      .eq('company_id', companyId);
+      .select('id, name, classification, color, is_active')
+      .eq('company_id', companyId)
+      .order('name');
 
     if (catData) setCategoriesList(catData as ExpenseCategoryItem[]);
 
-    // 2. Fetch all expenses with select('*')
+    // 2. Fetch expenses using exact database column names (expense_category_id, currency_id, expense_date)
     let query = supabase
       .from('expenses')
-      .select('*')
+      .select('id, expense_date, expense_category_id, payment_category_id, currency_id, amount, description, notes')
       .eq('company_id', companyId)
       .is('deleted_at', null);
 
@@ -386,11 +404,10 @@ export default function Reports() {
     if (to) query = query.lte('expense_date', to);
 
     const { data: expData, error: expError } = await query;
-    if (!expError && expData) {
-      const filtered = currency !== 'all'
-        ? expData.filter((e: any) => e.currency === currency)
-        : expData;
-      setExpensesData(filtered);
+    if (expError) {
+      console.error('Error fetching expenses:', expError);
+    } else if (expData) {
+      setExpensesData(expData as ExpenseRow[]);
     }
   };
 
@@ -704,17 +721,29 @@ export default function Reports() {
     }));
   };
 
+  // Currency lookup maps
+  const currencyIdToCodeMap = useMemo(() => {
+    const map = new Map<string, string>();
+    currencies.forEach(c => {
+      if (c.id && c.code) map.set(c.id, c.code);
+    });
+    return map;
+  }, [currencies]);
+
   // Distinct currencies discovered in data
   const activeCurrenciesInPeriod = useMemo(() => {
     const currSet = new Set<string>();
     documentData.forEach(d => { if (d.currency) currSet.add(d.currency); });
-    expensesData.forEach(e => { if (e.currency) currSet.add(e.currency); });
+    expensesData.forEach(e => {
+      const cCode = e.currency_id ? currencyIdToCodeMap.get(e.currency_id) : null;
+      if (cCode) currSet.add(cCode);
+    });
 
     if (currSet.size === 0) {
       currSet.add(companySettings?.currency || 'TZS');
     }
     return Array.from(currSet).sort();
-  }, [documentData, expensesData, companySettings]);
+  }, [documentData, expensesData, currencyIdToCodeMap, companySettings]);
 
   useEffect(() => {
     if (activeCurrenciesInPeriod.length > 0) {
@@ -724,7 +753,7 @@ export default function Reports() {
     }
   }, [activeCurrenciesInPeriod, activeStatementCurrency]);
 
-  // Universal Category Resolver mapping ID, Name, and raw strings
+  // Category lookup maps (by UUID and by Name)
   const categoryLookup = useMemo(() => {
     const byId = new Map<string, ExpenseCategoryItem>();
     const byName = new Map<string, ExpenseCategoryItem>();
@@ -734,21 +763,10 @@ export default function Reports() {
       if (c.name) byName.set(c.name.trim().toLowerCase(), c);
     });
 
-    const resolve = (exp: any): ExpenseCategoryItem | null => {
-      if (exp.category_id && byId.has(String(exp.category_id).toLowerCase())) {
-        return byId.get(String(exp.category_id).toLowerCase())!;
-      }
-      if (exp.category && byId.has(String(exp.category).toLowerCase())) {
-        return byId.get(String(exp.category).toLowerCase())!;
-      }
-      if (exp.category && byName.has(String(exp.category).trim().toLowerCase())) {
-        return byName.get(String(exp.category).trim().toLowerCase())!;
-      }
-      if (exp.name && byName.has(String(exp.name).trim().toLowerCase())) {
-        return byName.get(String(exp.name).trim().toLowerCase())!;
-      }
-      if (exp.description && byName.has(String(exp.description).trim().toLowerCase())) {
-        return byName.get(String(exp.description).trim().toLowerCase())!;
+    const resolve = (exp: ExpenseRow): ExpenseCategoryItem | null => {
+      // 1. Check exact expense_category_id foreign key
+      if (exp.expense_category_id && byId.has(String(exp.expense_category_id).toLowerCase())) {
+        return byId.get(String(exp.expense_category_id).toLowerCase())!;
       }
       return null;
     };
@@ -762,7 +780,11 @@ export default function Reports() {
 
     activeCurrenciesInPeriod.forEach(curr => {
       const docsInCurr = documentData.filter(d => (d.currency || activeCurrenciesInPeriod[0]) === curr);
-      const expInCurr = expensesData.filter(e => (e.currency || activeCurrenciesInPeriod[0]) === curr);
+      
+      const expInCurr = expensesData.filter(e => {
+        const cCode = e.currency_id ? currencyIdToCodeMap.get(e.currency_id) : activeCurrenciesInPeriod[0];
+        return (cCode || activeCurrenciesInPeriod[0]) === curr;
+      });
 
       const totalSalesRevenue = docsInCurr.reduce((sum, d) => sum + (d.total_amount || 0), 0);
       const totalCollected = docsInCurr.reduce((sum, d) => sum + (d.paid || 0), 0);
@@ -788,7 +810,7 @@ export default function Reports() {
       let totalOperating = 0;
       let totalAdmin = 0;
 
-      expInCurr.forEach((exp: any) => {
+      expInCurr.forEach((exp: ExpenseRow) => {
         const amt = Number(exp.amount) || 0;
         const matched = categoryLookup.resolve(exp);
 
@@ -807,8 +829,8 @@ export default function Reports() {
             totalOperating += amt;
           }
         } else {
-          // Unmatched custom expense
-          const fallback = exp.category || exp.description || 'Uncategorized';
+          // Unassigned fallback
+          const fallback = 'Unassigned Expenses';
           operatingBreakdown[fallback] = (operatingBreakdown[fallback] || 0) + amt;
           totalOperating += amt;
         }
@@ -836,7 +858,7 @@ export default function Reports() {
     });
 
     return result;
-  }, [activeCurrenciesInPeriod, documentData, expensesData, categoriesList, categoryLookup]);
+  }, [activeCurrenciesInPeriod, documentData, expensesData, categoriesList, categoryLookup, currencyIdToCodeMap]);
 
   // Current active statement financials
   const currentStatement = useMemo(() => {
@@ -865,16 +887,17 @@ export default function Reports() {
 
     categoriesList.forEach(c => distinctCategoriesSet.add(c.name));
 
-    const expFiltered = activeStatementCurrency
-      ? expensesData.filter((e: any) => (e.currency || activeCurrenciesInPeriod[0]) === activeStatementCurrency)
-      : expensesData;
+    const expFiltered = expensesData.filter((e: ExpenseRow) => {
+      const cCode = e.currency_id ? currencyIdToCodeMap.get(e.currency_id) : activeCurrenciesInPeriod[0];
+      return (cCode || activeCurrenciesInPeriod[0]) === activeStatementCurrency;
+    });
 
-    expFiltered.forEach((exp: any) => {
-      const d = exp.expense_date || exp.date || (exp.created_at ? exp.created_at.split('T')[0] : '');
+    expFiltered.forEach((exp: ExpenseRow) => {
+      const d = exp.expense_date;
       if (!d) return;
 
       const matched = categoryLookup.resolve(exp);
-      const catName = matched ? matched.name : (exp.category || exp.description || 'Other');
+      const catName = matched ? matched.name : 'Unassigned Expenses';
       const amt = Number(exp.amount) || 0;
 
       distinctCategoriesSet.add(catName);
@@ -895,7 +918,7 @@ export default function Reports() {
       categoryTotals,
       grandTotal
     };
-  }, [expensesData, categoriesList, activeStatementCurrency, activeCurrenciesInPeriod, categoryLookup]);
+  }, [expensesData, categoriesList, activeStatementCurrency, activeCurrenciesInPeriod, categoryLookup, currencyIdToCodeMap]);
 
   // Invoices grouped by currency
   const invoiceTotalsByCurrency = useMemo(() => {
@@ -996,7 +1019,7 @@ export default function Reports() {
 
     try {
       const opt = {
-        margin: [0, 0, 5, 0],
+        margin:,
         filename: `Financial_Statement_${activeStatementCurrency}_${dateFrom}_to_${dateTo}.pdf`,
         image: { type: 'jpeg', quality: 0.98 },
         html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff' },
@@ -1303,7 +1326,7 @@ export default function Reports() {
                           Object.entries(currentStatement.cogsBreakdown).map(([cat, amt]) => (
                             <div key={cat} className="flex justify-between py-0.5">
                               <span className="text-gray-600">{cat}</span>
-                              <span className={`font-medium ${amt > 0 ? 'text-gray-900' : 'text-gray-400'}`}>
+                              <span className={`font-medium ${amt > 0 ? 'text-gray-900 font-bold' : 'text-gray-400'}`}>
                                 {formatCurrency(amt, activeStatementCurrency)}
                               </span>
                             </div>
@@ -1333,7 +1356,7 @@ export default function Reports() {
                           Object.entries(currentStatement.operatingBreakdown).map(([cat, amt]) => (
                             <div key={cat} className="flex justify-between py-0.5">
                               <span className="text-gray-600">{cat}</span>
-                              <span className={`font-medium ${amt > 0 ? 'text-gray-900' : 'text-gray-400'}`}>
+                              <span className={`font-medium ${amt > 0 ? 'text-gray-900 font-bold' : 'text-gray-400'}`}>
                                 {formatCurrency(amt, activeStatementCurrency)}
                               </span>
                             </div>
@@ -1355,7 +1378,7 @@ export default function Reports() {
                           Object.entries(currentStatement.adminBreakdown).map(([cat, amt]) => (
                             <div key={cat} className="flex justify-between py-0.5">
                               <span className="text-gray-600">{cat}</span>
-                              <span className={`font-medium ${amt > 0 ? 'text-gray-900' : 'text-gray-400'}`}>
+                              <span className={`font-medium ${amt > 0 ? 'text-gray-900 font-bold' : 'text-gray-400'}`}>
                                 {formatCurrency(amt, activeStatementCurrency)}
                               </span>
                             </div>
@@ -1472,7 +1495,7 @@ export default function Reports() {
                   <h3 className="text-base font-bold uppercase tracking-wider text-gray-900">
                     3. Daily Expenses Matrix ({activeStatementCurrency})
                   </h3>
-                  <span className="text-xs text-gray-500">Expenses for currency: {activeStatementCurrency}</span>
+                  <span className="text-xs text-gray-500">Categorized expenses for: {activeStatementCurrency}</span>
                 </div>
 
                 {dynamicExpenseMatrix.sortedDates.length === 0 ? (
