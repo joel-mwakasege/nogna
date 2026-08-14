@@ -879,47 +879,6 @@ export default function Reports() {
     };
   }, [financialsByCurrency, activeStatementCurrency]);
 
-  // Dynamic Daily Expenses Matrix - showing active categories only
-  const dynamicExpenseMatrix = useMemo(() => {
-    const datesMap: Record<string, Record<string, number>> = {};
-    const categoryTotals: Record<string, number> = {};
-    const distinctActiveCategories = new Set<string>();
-
-    const expFiltered = expensesData.filter((e: ExpenseRow) => {
-      const cCode = e.currency_id ? currencyIdToCodeMap.get(e.currency_id) : activeCurrenciesInPeriod[0];
-      return (cCode || activeCurrenciesInPeriod[0]) === activeStatementCurrency;
-    });
-
-    expFiltered.forEach((exp: ExpenseRow) => {
-      const d = exp.expense_date;
-      if (!d) return;
-
-      const matched = categoryLookup.resolve(exp);
-      const catName = matched ? matched.name : 'Unassigned Expenses';
-      const amt = Number(exp.amount) || 0;
-
-      if (amt > 0) {
-        distinctActiveCategories.add(catName);
-      }
-
-      if (!datesMap[d]) datesMap[d] = {};
-      datesMap[d][catName] = (datesMap[d][catName] || 0) + amt;
-      categoryTotals[catName] = (categoryTotals[catName] || 0) + amt;
-    });
-
-    const activeCategories = Array.from(distinctActiveCategories).sort();
-    const sortedDates = Object.keys(datesMap).sort();
-    const grandTotal = Object.values(categoryTotals).reduce((a, b) => a + b, 0);
-
-    return {
-      activeCategories,
-      sortedDates,
-      datesMap,
-      categoryTotals,
-      grandTotal
-    };
-  }, [expensesData, activeStatementCurrency, activeCurrenciesInPeriod, categoryLookup, currencyIdToCodeMap]);
-
   const invoiceTotalsByCurrency = useMemo(() => {
     return documentData.reduce((acc, doc) => {
       const curr = doc.currency || activeCurrenciesInPeriod[0] || 'TZS';
@@ -1126,7 +1085,7 @@ export default function Reports() {
           <div>
             <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 tracking-tight">Financial Reports</h1>
             <p className="text-xs sm:text-sm text-gray-500 mt-1">
-              Multi-currency financial statements, invoice ledgers, and operational matrices.
+              Monthly financial statements, invoice ledgers, and revenue overviews.
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -1258,7 +1217,7 @@ export default function Reports() {
             {/* Printable Document Sheet Container */}
             <div id="financial-statement-doc" className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 sm:p-10 space-y-8 font-sans">
               
-              {/* Clean Letterhead Banner (Exact natural aspect ratio, no squishing) */}
+              {/* Clean Letterhead Banner */}
               {companySettings?.letterhead_url ? (
                 <div className="-mx-6 sm:-mx-10 -mt-6 sm:-mt-10 mb-6 overflow-hidden rounded-t-xl" id="letterhead-container">
                   <img
@@ -1488,68 +1447,6 @@ export default function Reports() {
                     ))}
                   </div>
                 </div>
-              </div>
-
-              {/* 3. Dynamic Daily Expenses Matrix */}
-              <div className="statement-section-break">
-                <div className="border-b border-gray-900 pb-2 mb-4 flex justify-between items-center">
-                  <h3 className="text-sm font-bold uppercase tracking-wider text-gray-900">
-                    3. Daily Expenses Matrix ({activeStatementCurrency})
-                  </h3>
-                  <span className="text-xs text-gray-500 font-sans">Categorized expenses for: {activeStatementCurrency}</span>
-                </div>
-
-                {dynamicExpenseMatrix.sortedDates.length === 0 ? (
-                  <div className="text-center py-6 text-gray-500 text-xs bg-gray-50 rounded-lg">
-                    No expense records found for {activeStatementCurrency} in this period.
-                  </div>
-                ) : (
-                  <div className="w-full">
-                    <table className="w-full text-[10px] font-sans border border-gray-200 divide-y divide-gray-200">
-                      <thead className="bg-gray-50 font-semibold text-gray-700">
-                        <tr>
-                          <th className="px-2 py-2 text-left bg-gray-100 uppercase tracking-wider">DATE</th>
-                          {dynamicExpenseMatrix.activeCategories.map(cat => (
-                            <th key={cat} className="px-1.5 py-2 text-right whitespace-nowrap">{cat}</th>
-                          ))}
-                          <th className="px-2 py-2 text-right bg-gray-100 uppercase tracking-wider font-bold text-gray-900">TOTAL</th>
-                        </tr>
-                      </thead>
-                      <tbody className="bg-white divide-y divide-gray-100 font-mono">
-                        {dynamicExpenseMatrix.sortedDates.map(dateStr => {
-                          const dayMap = dynamicExpenseMatrix.datesMap[dateStr] || {};
-                          const dayTotal = Object.values(dayMap).reduce((a, b) => a + b, 0);
-                          return (
-                            <tr key={dateStr} className="hover:bg-gray-50">
-                              <td className="px-2 py-1.5 font-sans font-medium text-gray-900 whitespace-nowrap bg-gray-50">{dateStr}</td>
-                              {dynamicExpenseMatrix.activeCategories.map(cat => (
-                                <td key={cat} className="px-1.5 py-1.5 text-right text-gray-700 whitespace-nowrap">
-                                  {dayMap[cat] ? formatCurrency(dayMap[cat], activeStatementCurrency) : '—'}
-                                </td>
-                              ))}
-                              <td className="px-2 py-1.5 text-right font-bold text-red-600 bg-gray-50 whitespace-nowrap">
-                                {formatCurrency(dayTotal, activeStatementCurrency)}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                      <tfoot className="bg-gray-100 font-bold border-t border-gray-300 font-mono">
-                        <tr>
-                          <td className="px-2 py-2 text-gray-900 font-sans uppercase">TOTAL</td>
-                          {dynamicExpenseMatrix.activeCategories.map(cat => (
-                            <td key={cat} className="px-1.5 py-2 text-right whitespace-nowrap">
-                              {dynamicExpenseMatrix.categoryTotals[cat] ? formatCurrency(dynamicExpenseMatrix.categoryTotals[cat], activeStatementCurrency) : '—'}
-                            </td>
-                          ))}
-                          <td className="px-2 py-2 text-right text-red-800 bg-gray-200 whitespace-nowrap">
-                            {formatCurrency(dynamicExpenseMatrix.grandTotal, activeStatementCurrency)}
-                          </td>
-                        </tr>
-                      </tfoot>
-                    </table>
-                  </div>
-                )}
               </div>
 
             </div>
