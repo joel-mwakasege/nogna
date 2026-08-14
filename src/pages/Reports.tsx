@@ -107,6 +107,7 @@ interface ExpenseCategoryItem {
   name: string;
   classification: 'cogs' | 'operating' | 'admin';
   color?: string;
+  is_active?: boolean;
 }
 
 interface CompanySettings {
@@ -366,6 +367,7 @@ export default function Reports() {
   const fetchExpensesData = async (from = dateFrom, to = dateTo, currency = selectedCurrency) => {
     if (!companyId) return;
 
+    // 1. Fetch categories
     const { data: catData } = await supabase
       .from('expense_categories')
       .select('*')
@@ -373,6 +375,7 @@ export default function Reports() {
 
     if (catData) setCategoriesList(catData as ExpenseCategoryItem[]);
 
+    // 2. Fetch all expenses with select('*')
     let query = supabase
       .from('expenses')
       .select('*')
@@ -713,7 +716,6 @@ export default function Reports() {
     return Array.from(currSet).sort();
   }, [documentData, expensesData, companySettings]);
 
-  // Ensure active statement currency is set
   useEffect(() => {
     if (activeCurrenciesInPeriod.length > 0) {
       if (!activeStatementCurrency || !activeCurrenciesInPeriod.includes(activeStatementCurrency)) {
@@ -722,16 +724,40 @@ export default function Reports() {
     }
   }, [activeCurrenciesInPeriod, activeStatementCurrency]);
 
-  // Multi-Currency P&L Map
-  const financialsByCurrency = useMemo(() => {
-    const catIdMap = new Map<string, ExpenseCategoryItem>();
-    const catNameMap = new Map<string, ExpenseCategoryItem>();
+  // Universal Category Resolver mapping ID, Name, and raw strings
+  const categoryLookup = useMemo(() => {
+    const byId = new Map<string, ExpenseCategoryItem>();
+    const byName = new Map<string, ExpenseCategoryItem>();
 
     categoriesList.forEach(c => {
-      if (c.id) catIdMap.set(c.id, c);
-      if (c.name) catNameMap.set(c.name.trim().toLowerCase(), c);
+      if (c.id) byId.set(String(c.id).toLowerCase(), c);
+      if (c.name) byName.set(c.name.trim().toLowerCase(), c);
     });
 
+    const resolve = (exp: any): ExpenseCategoryItem | null => {
+      if (exp.category_id && byId.has(String(exp.category_id).toLowerCase())) {
+        return byId.get(String(exp.category_id).toLowerCase())!;
+      }
+      if (exp.category && byId.has(String(exp.category).toLowerCase())) {
+        return byId.get(String(exp.category).toLowerCase())!;
+      }
+      if (exp.category && byName.has(String(exp.category).trim().toLowerCase())) {
+        return byName.get(String(exp.category).trim().toLowerCase())!;
+      }
+      if (exp.name && byName.has(String(exp.name).trim().toLowerCase())) {
+        return byName.get(String(exp.name).trim().toLowerCase())!;
+      }
+      if (exp.description && byName.has(String(exp.description).trim().toLowerCase())) {
+        return byName.get(String(exp.description).trim().toLowerCase())!;
+      }
+      return null;
+    };
+
+    return { byId, byName, resolve };
+  }, [categoriesList]);
+
+  // Multi-Currency P&L Map reflecting ALL user-configured categories
+  const financialsByCurrency = useMemo(() => {
     const result: Record<string, CurrencyFinancialStatement> = {};
 
     activeCurrenciesInPeriod.forEach(curr => {
@@ -746,36 +772,44 @@ export default function Reports() {
       const operatingBreakdown: Record<string, number> = {};
       const adminBreakdown: Record<string, number> = {};
 
+      // Initialize all user-defined categories in their assigned section
+      categoriesList.forEach(cat => {
+        const cl = (cat.classification || 'operating').toLowerCase();
+        if (cl === 'cogs') {
+          cogsBreakdown[cat.name] = 0;
+        } else if (cl === 'admin') {
+          adminBreakdown[cat.name] = 0;
+        } else {
+          operatingBreakdown[cat.name] = 0;
+        }
+      });
+
       let totalCOGS = 0;
       let totalOperating = 0;
       let totalAdmin = 0;
 
       expInCurr.forEach((exp: any) => {
-        let resolvedCategoryName = 'Other';
-        let classification: 'cogs' | 'operating' | 'admin' = 'operating';
-
-        if (exp.category_id && catIdMap.has(exp.category_id)) {
-          const catObj = catIdMap.get(exp.category_id)!;
-          resolvedCategoryName = catObj.name;
-          classification = catObj.classification || 'operating';
-        } else if (exp.category) {
-          const catObj = catNameMap.get(exp.category.trim().toLowerCase());
-          resolvedCategoryName = exp.category.trim();
-          classification = catObj?.classification || 'operating';
-        } else if (exp.description) {
-          resolvedCategoryName = exp.description.trim();
-        }
-
         const amt = Number(exp.amount) || 0;
+        const matched = categoryLookup.resolve(exp);
 
-        if (classification === 'cogs') {
-          cogsBreakdown[resolvedCategoryName] = (cogsBreakdown[resolvedCategoryName] || 0) + amt;
-          totalCOGS += amt;
-        } else if (classification === 'admin') {
-          adminBreakdown[resolvedCategoryName] = (adminBreakdown[resolvedCategoryName] || 0) + amt;
-          totalAdmin += amt;
+        if (matched) {
+          const cl = (matched.classification || 'operating').toLowerCase();
+          const catName = matched.name;
+
+          if (cl === 'cogs') {
+            cogsBreakdown[catName] = (cogsBreakdown[catName] || 0) + amt;
+            totalCOGS += amt;
+          } else if (cl === 'admin') {
+            adminBreakdown[catName] = (adminBreakdown[catName] || 0) + amt;
+            totalAdmin += amt;
+          } else {
+            operatingBreakdown[catName] = (operatingBreakdown[catName] || 0) + amt;
+            totalOperating += amt;
+          }
         } else {
-          operatingBreakdown[resolvedCategoryName] = (operatingBreakdown[resolvedCategoryName] || 0) + amt;
+          // Unmatched custom expense
+          const fallback = exp.category || exp.description || 'Uncategorized';
+          operatingBreakdown[fallback] = (operatingBreakdown[fallback] || 0) + amt;
           totalOperating += amt;
         }
       });
@@ -802,7 +836,7 @@ export default function Reports() {
     });
 
     return result;
-  }, [activeCurrenciesInPeriod, documentData, expensesData, categoriesList]);
+  }, [activeCurrenciesInPeriod, documentData, expensesData, categoriesList, categoryLookup]);
 
   // Current active statement financials
   const currentStatement = useMemo(() => {
@@ -825,9 +859,6 @@ export default function Reports() {
 
   // Dynamic Daily Expenses Matrix
   const dynamicExpenseMatrix = useMemo(() => {
-    const catIdMap = new Map<string, string>();
-    categoriesList.forEach(c => catIdMap.set(c.id, c.name));
-
     const datesMap: Record<string, Record<string, number>> = {};
     const categoryTotals: Record<string, number> = {};
     const distinctCategoriesSet = new Set<string>();
@@ -842,14 +873,10 @@ export default function Reports() {
       const d = exp.expense_date || exp.date || (exp.created_at ? exp.created_at.split('T')[0] : '');
       if (!d) return;
 
-      let catName = 'Other';
-      if (exp.category_id && catIdMap.has(exp.category_id)) {
-        catName = catIdMap.get(exp.category_id)!;
-      } else if (exp.category) {
-        catName = exp.category.trim();
-      }
-
+      const matched = categoryLookup.resolve(exp);
+      const catName = matched ? matched.name : (exp.category || exp.description || 'Other');
       const amt = Number(exp.amount) || 0;
+
       distinctCategoriesSet.add(catName);
 
       if (!datesMap[d]) datesMap[d] = {};
@@ -868,7 +895,7 @@ export default function Reports() {
       categoryTotals,
       grandTotal
     };
-  }, [expensesData, categoriesList, activeStatementCurrency, activeCurrenciesInPeriod]);
+  }, [expensesData, categoriesList, activeStatementCurrency, activeCurrenciesInPeriod, categoryLookup]);
 
   // Invoices grouped by currency
   const invoiceTotalsByCurrency = useMemo(() => {
@@ -1276,11 +1303,13 @@ export default function Reports() {
                           Object.entries(currentStatement.cogsBreakdown).map(([cat, amt]) => (
                             <div key={cat} className="flex justify-between py-0.5">
                               <span className="text-gray-600">{cat}</span>
-                              <span className="font-medium text-gray-900">{formatCurrency(amt, activeStatementCurrency)}</span>
+                              <span className={`font-medium ${amt > 0 ? 'text-gray-900' : 'text-gray-400'}`}>
+                                {formatCurrency(amt, activeStatementCurrency)}
+                              </span>
                             </div>
                           ))
                         ) : (
-                          <div className="text-gray-400 italic py-1">No COGS recorded for {activeStatementCurrency}.</div>
+                          <div className="text-gray-400 italic py-1">No COGS categories configured.</div>
                         )}
                         <div className="flex justify-between font-bold border-t pt-1.5 text-red-700">
                           <span>Total COGS</span>
@@ -1299,16 +1328,18 @@ export default function Reports() {
                   <div className="border border-gray-200 rounded-lg p-4 space-y-4 text-xs font-mono">
                     <div>
                       <div className="font-bold text-gray-900 uppercase tracking-wide border-b pb-1 font-sans text-xs">Operating Expenses</div>
-                      <div className="mt-2 space-y-1 max-h-36 overflow-y-auto pr-1">
+                      <div className="mt-2 space-y-1 max-h-40 overflow-y-auto pr-1">
                         {Object.keys(currentStatement.operatingBreakdown).length > 0 ? (
                           Object.entries(currentStatement.operatingBreakdown).map(([cat, amt]) => (
                             <div key={cat} className="flex justify-between py-0.5">
                               <span className="text-gray-600">{cat}</span>
-                              <span className="font-medium text-gray-900">{formatCurrency(amt, activeStatementCurrency)}</span>
+                              <span className={`font-medium ${amt > 0 ? 'text-gray-900' : 'text-gray-400'}`}>
+                                {formatCurrency(amt, activeStatementCurrency)}
+                              </span>
                             </div>
                           ))
                         ) : (
-                          <div className="text-gray-400 italic py-1">No operating expenses for {activeStatementCurrency}.</div>
+                          <div className="text-gray-400 italic py-1">No operating categories configured.</div>
                         )}
                       </div>
                       <div className="flex justify-between font-bold border-t pt-1.5 text-gray-900 mt-1">
@@ -1319,16 +1350,18 @@ export default function Reports() {
 
                     <div>
                       <div className="font-bold text-gray-900 uppercase tracking-wide border-b pb-1 font-sans text-xs">Administrative & Tax Expenses</div>
-                      <div className="mt-2 space-y-1 max-h-32 overflow-y-auto pr-1">
+                      <div className="mt-2 space-y-1 max-h-36 overflow-y-auto pr-1">
                         {Object.keys(currentStatement.adminBreakdown).length > 0 ? (
                           Object.entries(currentStatement.adminBreakdown).map(([cat, amt]) => (
                             <div key={cat} className="flex justify-between py-0.5">
                               <span className="text-gray-600">{cat}</span>
-                              <span className="font-medium text-gray-900">{formatCurrency(amt, activeStatementCurrency)}</span>
+                              <span className={`font-medium ${amt > 0 ? 'text-gray-900' : 'text-gray-400'}`}>
+                                {formatCurrency(amt, activeStatementCurrency)}
+                              </span>
                             </div>
                           ))
                         ) : (
-                          <div className="text-gray-400 italic py-1">No admin expenses for {activeStatementCurrency}.</div>
+                          <div className="text-gray-400 italic py-1">No admin categories configured.</div>
                         )}
                       </div>
                       <div className="flex justify-between font-bold border-t pt-1.5 text-gray-900 mt-1">
