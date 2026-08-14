@@ -384,7 +384,6 @@ export default function Reports() {
   const fetchExpensesData = async (from = dateFrom, to = dateTo) => {
     if (!companyId) return;
 
-    // 1. Fetch category definitions
     const { data: catData } = await supabase
       .from('expense_categories')
       .select('id, name, classification, color, is_active')
@@ -393,7 +392,6 @@ export default function Reports() {
 
     if (catData) setCategoriesList(catData as ExpenseCategoryItem[]);
 
-    // 2. Fetch expenses using exact database column names (expense_category_id, currency_id, expense_date)
     let query = supabase
       .from('expenses')
       .select('id, expense_date, expense_category_id, payment_category_id, currency_id, amount, description, notes')
@@ -721,7 +719,7 @@ export default function Reports() {
     }));
   };
 
-  // Currency lookup maps
+  // Currency lookup map
   const currencyIdToCodeMap = useMemo(() => {
     const map = new Map<string, string>();
     currencies.forEach(c => {
@@ -753,7 +751,7 @@ export default function Reports() {
     }
   }, [activeCurrenciesInPeriod, activeStatementCurrency]);
 
-  // Category lookup maps (by UUID and by Name)
+  // Category lookup maps
   const categoryLookup = useMemo(() => {
     const byId = new Map<string, ExpenseCategoryItem>();
     const byName = new Map<string, ExpenseCategoryItem>();
@@ -764,7 +762,6 @@ export default function Reports() {
     });
 
     const resolve = (exp: ExpenseRow): ExpenseCategoryItem | null => {
-      // 1. Check exact expense_category_id foreign key
       if (exp.expense_category_id && byId.has(String(exp.expense_category_id).toLowerCase())) {
         return byId.get(String(exp.expense_category_id).toLowerCase())!;
       }
@@ -774,7 +771,7 @@ export default function Reports() {
     return { byId, byName, resolve };
   }, [categoriesList]);
 
-  // Multi-Currency P&L Map reflecting ALL user-configured categories
+  // Multi-Currency P&L Map
   const financialsByCurrency = useMemo(() => {
     const result: Record<string, CurrencyFinancialStatement> = {};
 
@@ -794,7 +791,6 @@ export default function Reports() {
       const operatingBreakdown: Record<string, number> = {};
       const adminBreakdown: Record<string, number> = {};
 
-      // Initialize all user-defined categories in their assigned section
       categoriesList.forEach(cat => {
         const cl = (cat.classification || 'operating').toLowerCase();
         if (cl === 'cogs') {
@@ -829,7 +825,6 @@ export default function Reports() {
             totalOperating += amt;
           }
         } else {
-          // Unassigned fallback
           const fallback = 'Unassigned Expenses';
           operatingBreakdown[fallback] = (operatingBreakdown[fallback] || 0) + amt;
           totalOperating += amt;
@@ -860,7 +855,6 @@ export default function Reports() {
     return result;
   }, [activeCurrenciesInPeriod, documentData, expensesData, categoriesList, categoryLookup, currencyIdToCodeMap]);
 
-  // Current active statement financials
   const currentStatement = useMemo(() => {
     return financialsByCurrency[activeStatementCurrency] || {
       currency: activeStatementCurrency || 'TZS',
@@ -879,7 +873,6 @@ export default function Reports() {
     };
   }, [financialsByCurrency, activeStatementCurrency]);
 
-  // Dynamic Daily Expenses Matrix
   const dynamicExpenseMatrix = useMemo(() => {
     const datesMap: Record<string, Record<string, number>> = {};
     const categoryTotals: Record<string, number> = {};
@@ -920,7 +913,6 @@ export default function Reports() {
     };
   }, [expensesData, categoriesList, activeStatementCurrency, activeCurrenciesInPeriod, categoryLookup, currencyIdToCodeMap]);
 
-  // Invoices grouped by currency
   const invoiceTotalsByCurrency = useMemo(() => {
     return documentData.reduce((acc, doc) => {
       const curr = doc.currency || activeCurrenciesInPeriod[0] || 'TZS';
@@ -1495,7 +1487,7 @@ export default function Reports() {
                   <h3 className="text-base font-bold uppercase tracking-wider text-gray-900">
                     3. Daily Expenses Matrix ({activeStatementCurrency})
                   </h3>
-                  <span className="text-xs text-gray-500">Categorized expenses for: {activeStatementCurrency}</span>
+                  <span className="text-xs text-gray-500">Expenses for currency: {activeStatementCurrency}</span>
                 </div>
 
                 {dynamicExpenseMatrix.sortedDates.length === 0 ? (
