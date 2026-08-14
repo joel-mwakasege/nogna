@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { X, Paperclip, Trash2, FileText, Image } from 'lucide-react';
+import { X, Paperclip, Trash2, FileText, Image, AlertCircle } from 'lucide-react';
 import { Button } from './Button';
 import { supabase } from '../lib/supabase';
 import { Database } from '../lib/database.types';
@@ -49,9 +49,12 @@ export function PaymentModal({
   onPaymentAdded,
   editPayment,
 }: PaymentModalProps) {
-  const { userProfile } = useAuth();
+  const { user: authUser, userProfile, companyId: authCompanyId } = useAuth();
+  const activeCompanyId = userProfile?.company_id || authCompanyId;
+
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]);
   const [existingAttachments, setExistingAttachments] = useState<ExistingAttachment[]>([]);
   const [removedAttachmentIds, setRemovedAttachmentIds] = useState<string[]>([]);
@@ -63,7 +66,7 @@ export function PaymentModal({
     document_id: documentId,
     account_id: '',
     amount: remainingAmount,
-    currency: documentCurrency as 'USD' | 'GBP' | 'EUR',
+    currency: documentCurrency as any,
     payment_date: new Date().toISOString().split('T')[0],
     payment_method: 'bank_transfer',
     reference_number: '',
@@ -72,7 +75,7 @@ export function PaymentModal({
 
   useEffect(() => {
     if (isOpen) {
-      loadAccounts();
+      setErrorMessage(null);
       setPendingFiles([]);
       setRemovedAttachmentIds([]);
       setFileError('');
@@ -82,44 +85,56 @@ export function PaymentModal({
           document_id: editPayment.document_id,
           account_id: editPayment.account_id,
           amount: editPayment.amount,
-          currency: editPayment.currency as 'USD' | 'GBP' | 'EUR',
+          currency: editPayment.currency as any,
           payment_date: editPayment.payment_date,
           payment_method: editPayment.payment_method,
           reference_number: editPayment.reference_number || '',
           notes: editPayment.notes || '',
         });
         setExistingAttachments(editPayment.attachments || []);
+        loadAccounts(editPayment.account_id);
       } else {
-        setFormData((prev) => ({
-          ...prev,
+        setFormData({
           document_id: documentId,
           amount: remainingAmount,
-          currency: documentCurrency as 'USD' | 'GBP' | 'EUR',
+          currency: documentCurrency as any,
           payment_date: new Date().toISOString().split('T')[0],
           payment_method: 'bank_transfer',
           account_id: '',
           reference_number: '',
           notes: '',
-        }));
+        });
         setExistingAttachments([]);
+        loadAccounts();
       }
     }
-  }, [isOpen, editPayment]);
+  }, [isOpen, editPayment, documentId, remainingAmount, documentCurrency]);
 
-  const loadAccounts = async () => {
+  const loadAccounts = async (selectedAccountId?: string) => {
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from('accounts')
         .select('*')
         .eq('is_active', true)
         .order('name');
 
-      if (error) throw error;
-      setAccounts(data || []);
-      if (!editPayment && data && data.length > 0) {
-        setFormData((prev) => ({ ...prev, account_id: data[0].id }));
+      if (activeCompanyId) {
+        query = query.eq('company_id', activeCompanyId);
       }
-    } catch (error) {
+
+      const { data, error } = await query;
+      if (error) throw error;
+
+      const loadedAccounts = data || [];
+      setAccounts(loadedAccounts);
+
+      if (!selectedAccountId && loadedAccounts.length > 0) {
+        setFormData((prev) => ({
+          ...prev,
+          account_id: prev.account_id || loadedAccounts[0].id,
+        }));
+      }
+    } catch (error: any) {
       console.error('Error loading accounts:', error);
     }
   };
@@ -164,30 +179,62 @@ export function PaymentModal({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setErrorMessage(null);
+
+    // Validation checks
+    if (!formData.account_id) {
+      setErrorMessage('Please select an account to receive this payment.');
+      return;
+    }
+
+    const parsedAmount = Number(formData.amount);
+    if (isNaN(parsedAmount) || parsedAmount <= 0) {
+      setErrorMessage('Please enter a valid payment amount greater than zero.');
+      return;
+    }
+
     setIsSubmitting(true);
 
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('User not authenticated');
-      if (!userProfile?.company_id) throw new Error('Company information not found');
+      const { data: authData } = await supabase.auth.getUser();
+      const currentUserId = authData.user?.id || authUser?.id;
+
+      if (!currentUserId) {
+        throw new Error('User authentication session not found. Please log in again.');
+      }
+
+      // Ensure company_id is resolved
+      let targetCompanyId = activeCompanyId;
+      if (!targetCompanyId) {
+        const { data: docData } = await supabase
+          .from('documents')
+          .select('company_id')
+          .eq('id', documentId)
+          .single();
+        targetCompanyId = docData?.company_id;
+      }
+
+      if (!targetCompanyId) {
+        throw new Error('Company ID could not be determined for this document.');
+      }
 
       let paymentId: string;
 
       if (isEditMode && editPayment) {
-        const { error } = await supabase
+        const { error: updateError } = await supabase
           .from('payments')
           .update({
             account_id: formData.account_id,
-            amount: formData.amount,
+            amount: parsedAmount,
             currency: formData.currency,
             payment_date: formData.payment_date,
             payment_method: formData.payment_method,
-            reference_number: formData.reference_number,
-            notes: formData.notes,
+            reference_number: formData.reference_number?.trim() || null,
+            notes: formData.notes?.trim() || null,
           })
           .eq('id', editPayment.id);
 
-        if (error) throw error;
+        if (updateError) throw updateError;
         paymentId = editPayment.id;
 
         // Soft-delete removed attachments
@@ -197,7 +244,6 @@ export function PaymentModal({
             .update({ deleted_at: new Date().toISOString() })
             .in('id', removedAttachmentIds);
 
-          // Also remove from storage
           const removedAttachments = (editPayment.attachments || []).filter((a) =>
             removedAttachmentIds.includes(a.id)
           );
@@ -206,42 +252,51 @@ export function PaymentModal({
           );
         }
       } else {
-        const { data: payment, error } = await supabase
+        const { data: newPayment, error: insertError } = await supabase
           .from('payments')
-          .insert([{
-            ...formData,
-            user_id: user.id,
-            company_id: userProfile.company_id,
-          }])
+          .insert([
+            {
+              document_id: documentId,
+              account_id: formData.account_id,
+              amount: parsedAmount,
+              currency: formData.currency,
+              payment_date: formData.payment_date,
+              payment_method: formData.payment_method,
+              reference_number: formData.reference_number?.trim() || null,
+              notes: formData.notes?.trim() || null,
+              user_id: currentUserId,
+              company_id: targetCompanyId,
+            },
+          ])
           .select('id')
           .single();
 
-        if (error) throw error;
-        paymentId = payment.id;
+        if (insertError) throw insertError;
+        paymentId = newPayment.id;
       }
 
-      // Upload new attachments
+      // Upload new attachments if present
       if (pendingFiles.length > 0) {
-        await Promise.all(
-          pendingFiles.map(async ({ file }) => {
-            const filePath = await uploadFile(file, 'payment-attachments', paymentId);
-            await supabase.from('payment_attachments').insert({
-              payment_id: paymentId,
-              file_name: file.name,
-              file_path: filePath,
-              file_size: file.size,
-              file_type: file.type,
-              uploaded_by: user.id,
-            });
-          })
-        );
+        for (const { file } of pendingFiles) {
+          const filePath = await uploadFile(file, 'payment-attachments', paymentId);
+          const { error: attError } = await supabase.from('payment_attachments').insert({
+            payment_id: paymentId,
+            file_name: file.name,
+            file_path: filePath,
+            file_size: file.size,
+            file_type: file.type,
+            uploaded_by: currentUserId,
+            company_id: targetCompanyId,
+          });
+          if (attError) console.error('Attachment record error:', attError);
+        }
       }
 
       onPaymentAdded();
       onClose();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error saving payment:', error);
-      alert('Failed to save payment. Please try again.');
+      setErrorMessage(error.message || 'Failed to save payment. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
@@ -268,6 +323,13 @@ export function PaymentModal({
           </button>
         </div>
 
+        {errorMessage && (
+          <div className="mx-4 sm:mx-6 mt-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm flex items-start gap-2">
+            <AlertCircle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
+            <span>{errorMessage}</span>
+          </div>
+        )}
+
         <form onSubmit={handleSubmit} className="p-4 sm:p-6 space-y-4 sm:space-y-6">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
@@ -278,10 +340,13 @@ export function PaymentModal({
                 type="number"
                 step="0.01"
                 min="0.01"
-                max={effectiveMax}
-                value={formData.amount}
+                max={effectiveMax > 0 ? effectiveMax : undefined}
+                value={isNaN(Number(formData.amount)) ? '' : formData.amount}
                 onChange={(e) =>
-                  setFormData({ ...formData, amount: parseFloat(e.target.value) })
+                  setFormData({
+                    ...formData,
+                    amount: e.target.value === '' ? 0 : parseFloat(e.target.value),
+                  })
                 }
                 className="w-full px-3 sm:px-4 py-2 sm:py-2.5 text-sm sm:text-base border border-gray-300 rounded-lg focus:ring-2 focus:ring-black focus:border-transparent"
                 required
@@ -312,7 +377,7 @@ export function PaymentModal({
               Account Received *
             </label>
             <select
-              value={formData.account_id}
+              value={formData.account_id || ''}
               onChange={(e) =>
                 setFormData({ ...formData, account_id: e.target.value })
               }
@@ -326,6 +391,11 @@ export function PaymentModal({
                 </option>
               ))}
             </select>
+            {accounts.length === 0 && (
+              <p className="text-xs text-amber-600 mt-1">
+                No active accounts found. Please add a bank or cash account first.
+              </p>
+            )}
           </div>
 
           <div>
@@ -389,7 +459,6 @@ export function PaymentModal({
               Attachments
             </label>
 
-            {/* Existing attachments (edit mode) */}
             {existingAttachments.length > 0 && (
               <ul className="mb-3 space-y-2">
                 {existingAttachments.map((att) => {
@@ -409,8 +478,12 @@ export function PaymentModal({
                         <FileText className="w-8 h-8 text-red-400 flex-shrink-0" />
                       )}
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-gray-800 truncate">{att.file_name}</p>
-                        <p className="text-xs text-gray-500">{formatFileSize(att.file_size)}</p>
+                        <p className="text-sm font-medium text-gray-800 truncate">
+                          {att.file_name}
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          {formatFileSize(att.file_size)}
+                        </p>
                       </div>
                       <button
                         type="button"
@@ -430,9 +503,7 @@ export function PaymentModal({
               className="border-2 border-dashed border-gray-200 rounded-lg px-4 py-5 flex flex-col items-center gap-2 cursor-pointer hover:border-gray-400 hover:bg-gray-50 transition-colors"
             >
               <Paperclip className="w-5 h-5 text-gray-400" />
-              <p className="text-sm text-gray-500">
-                Click to attach files
-              </p>
+              <p className="text-sm text-gray-500">Click to attach files</p>
               <p className="text-xs text-gray-400">
                 Images, PDF, Word — up to 10 MB each
               </p>
@@ -447,9 +518,7 @@ export function PaymentModal({
               className="hidden"
             />
 
-            {fileError && (
-              <p className="text-xs text-red-500 mt-2">{fileError}</p>
-            )}
+            {fileError && <p className="text-xs text-red-500 mt-2">{fileError}</p>}
 
             {pendingFiles.length > 0 && (
               <ul className="mt-3 space-y-2">
@@ -470,8 +539,12 @@ export function PaymentModal({
                       <Image className="w-8 h-8 text-blue-400 flex-shrink-0" />
                     )}
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-800 truncate">{pf.file.name}</p>
-                      <p className="text-xs text-gray-500">{formatFileSize(pf.file.size)}</p>
+                      <p className="text-sm font-medium text-gray-800 truncate">
+                        {pf.file.name}
+                      </p>
+                      <p className="text-xs text-gray-500">
+                        {formatFileSize(pf.file.size)}
+                      </p>
                     </div>
                     <button
                       type="button"
@@ -498,12 +571,16 @@ export function PaymentModal({
             </Button>
             <Button
               type="submit"
-              disabled={isSubmitting}
+              disabled={isSubmitting || accounts.length === 0}
               className="flex-1 w-full"
             >
               {isSubmitting
-                ? isEditMode ? 'Saving...' : 'Recording...'
-                : isEditMode ? 'Save Changes' : 'Record Payment'}
+                ? isEditMode
+                  ? 'Saving...'
+                  : 'Recording...'
+                : isEditMode
+                ? 'Save Changes'
+                : 'Record Payment'}
             </Button>
           </div>
         </form>
