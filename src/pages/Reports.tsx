@@ -1013,8 +1013,8 @@ export default function Reports() {
 
     try {
       const opt = {
-        margin:,
-        filename: `Financial_Statement_${activeStatementCurrency}_${dateFrom}_to_${dateTo}.pdf`,
+        margin: 5,
+        filename: 'Financial_Statement_' + activeStatementCurrency + '_' + dateFrom + '_to_' + dateTo + '.pdf',
         image: { type: 'jpeg', quality: 0.98 },
         html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff' },
         jsPDF: { orientation: 'portrait', unit: 'mm', format: 'a4', compress: true },
@@ -1489,7 +1489,7 @@ export default function Reports() {
                   <h3 className="text-base font-bold uppercase tracking-wider text-gray-900">
                     3. Daily Expenses Matrix ({activeStatementCurrency})
                   </h3>
-                  <span className="text-xs text-gray-500">Expenses for currency: {activeStatementCurrency}</span>
+                  <span className="text-xs text-gray-500">Categorized expenses for: {activeStatementCurrency}</span>
                 </div>
 
                 {dynamicExpenseMatrix.sortedDates.length === 0 ? (
