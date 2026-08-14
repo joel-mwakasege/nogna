@@ -6,7 +6,6 @@ import {
   FileText,
   DollarSign,
   Calendar,
-  Download,
   Filter,
   RefreshCw,
   ChevronDown,
@@ -15,7 +14,7 @@ import {
   FileSpreadsheet,
   FileDown,
   LayoutDashboard,
-  Receipt
+  Coins
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
@@ -110,16 +109,6 @@ interface ExpenseCategoryItem {
   color?: string;
 }
 
-interface ExpenseRecord {
-  id: string;
-  expense_date: string;
-  category_id?: string;
-  category?: string;
-  amount: number;
-  currency: string;
-  description?: string | null;
-}
-
 interface CompanySettings {
   company_name: string | null;
   logo_url: string | null;
@@ -129,6 +118,23 @@ interface CompanySettings {
   city: string | null;
   phone: string | null;
   email: string | null;
+  currency?: string | null;
+}
+
+interface CurrencyFinancialStatement {
+  currency: string;
+  totalSalesRevenue: number;
+  totalCollected: number;
+  totalUnpaid: number;
+  cogsBreakdown: Record<string, number>;
+  totalCOGS: number;
+  grossProfit: number;
+  operatingBreakdown: Record<string, number>;
+  totalOperating: number;
+  adminBreakdown: Record<string, number>;
+  totalAdmin: number;
+  totalExpenses: number;
+  profitBeforeTax: number;
 }
 
 interface VisibleSections {
@@ -255,8 +261,11 @@ export default function Reports() {
   const [profitLossData, setProfitLossData] = useState<ProfitAndLoss[]>([]);
   const [paymentsLogData, setPaymentsLogData] = useState<PaymentLogEntry[]>([]);
   const [categoriesList, setCategoriesList] = useState<ExpenseCategoryItem[]>([]);
-  const [expensesData, setExpensesData] = useState<ExpenseRecord[]>([]);
+  const [expensesData, setExpensesData] = useState<any[]>([]);
   const [companySettings, setCompanySettings] = useState<CompanySettings | null>(null);
+
+  // Active statement currency pill tab
+  const [activeStatementCurrency, setActiveStatementCurrency] = useState<string>('');
 
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     profitloss: true,
@@ -306,7 +315,9 @@ export default function Reports() {
       .select('code, symbol')
       .order('code');
 
-    if (data) setCurrencies(data);
+    if (data && data.length > 0) {
+      setCurrencies(data);
+    }
   };
 
   const fetchAllReportData = async (from = dateFrom, to = dateTo, currency = selectedCurrency) => {
@@ -334,7 +345,7 @@ export default function Reports() {
     if (!companyId) return;
     const { data } = await supabase
       .from('company_settings')
-      .select('company_name, logo_url, letterhead_url, address_line1, address_line2, city, phone, email')
+      .select('company_name, logo_url, letterhead_url, address_line1, address_line2, city, phone, email, currency')
       .eq('company_id', companyId)
       .maybeSingle();
 
@@ -355,33 +366,28 @@ export default function Reports() {
   const fetchExpensesData = async (from = dateFrom, to = dateTo, currency = selectedCurrency) => {
     if (!companyId) return;
 
-    // 1. Fetch categories with their user-configured classifications
     const { data: catData } = await supabase
       .from('expense_categories')
-      .select('id, name, classification, color')
+      .select('*')
       .eq('company_id', companyId);
 
-    if (catData) {
-      setCategoriesList(catData as ExpenseCategoryItem[]);
-    }
+    if (catData) setCategoriesList(catData as ExpenseCategoryItem[]);
 
-    // 2. Fetch expenses in date range
     let query = supabase
       .from('expenses')
-      .select('id, expense_date, category, amount, currency, description')
+      .select('*')
       .eq('company_id', companyId)
-      .is('deleted_at', null)
-      .gte('expense_date', from)
-      .lte('expense_date', to)
-      .order('expense_date', { ascending: true });
+      .is('deleted_at', null);
 
-    if (currency !== 'all') {
-      query = query.eq('currency', currency);
-    }
+    if (from) query = query.gte('expense_date', from);
+    if (to) query = query.lte('expense_date', to);
 
     const { data: expData, error: expError } = await query;
     if (!expError && expData) {
-      setExpensesData(expData as ExpenseRecord[]);
+      const filtered = currency !== 'all'
+        ? expData.filter((e: any) => e.currency === currency)
+        : expData;
+      setExpensesData(filtered);
     }
   };
 
@@ -695,79 +701,160 @@ export default function Reports() {
     }));
   };
 
-  // 3-Tier Dynamic P&L Calculation based on user-defined category classifications
-  const statementFinancials = useMemo(() => {
-    const catClassificationMap = new Map<string, 'cogs' | 'operating' | 'admin'>();
-    categoriesList.forEach(c => {
-      catClassificationMap.set(c.name.trim().toLowerCase(), c.classification || 'operating');
-    });
+  // Distinct currencies discovered in data
+  const activeCurrenciesInPeriod = useMemo(() => {
+    const currSet = new Set<string>();
+    documentData.forEach(d => { if (d.currency) currSet.add(d.currency); });
+    expensesData.forEach(e => { if (e.currency) currSet.add(e.currency); });
 
-    const totalSalesRevenue = documentData.reduce((sum, d) => sum + (d.total_amount || 0), 0);
-    const totalCollected = documentData.reduce((sum, d) => sum + (d.paid || 0), 0);
-    const totalUnpaid = documentData.reduce((sum, d) => sum + (d.balance || 0), 0);
+    if (currSet.size === 0) {
+      currSet.add(companySettings?.currency || 'TZS');
+    }
+    return Array.from(currSet).sort();
+  }, [documentData, expensesData, companySettings]);
 
-    const cogsBreakdown: Record<string, number> = {};
-    const operatingBreakdown: Record<string, number> = {};
-    const adminBreakdown: Record<string, number> = {};
-
-    let totalCOGS = 0;
-    let totalOperating = 0;
-    let totalAdmin = 0;
-
-    expensesData.forEach(exp => {
-      const catName = (exp.category || 'Other').trim();
-      const catKey = catName.toLowerCase();
-      const classification = catClassificationMap.get(catKey) || 'operating';
-      const amt = Number(exp.amount) || 0;
-
-      if (classification === 'cogs') {
-        cogsBreakdown[catName] = (cogsBreakdown[catName] || 0) + amt;
-        totalCOGS += amt;
-      } else if (classification === 'admin') {
-        adminBreakdown[catName] = (adminBreakdown[catName] || 0) + amt;
-        totalAdmin += amt;
-      } else {
-        operatingBreakdown[catName] = (operatingBreakdown[catName] || 0) + amt;
-        totalOperating += amt;
+  // Ensure active statement currency is set
+  useEffect(() => {
+    if (activeCurrenciesInPeriod.length > 0) {
+      if (!activeStatementCurrency || !activeCurrenciesInPeriod.includes(activeStatementCurrency)) {
+        setActiveStatementCurrency(activeCurrenciesInPeriod[0]);
       }
+    }
+  }, [activeCurrenciesInPeriod, activeStatementCurrency]);
+
+  // Multi-Currency P&L Map
+  const financialsByCurrency = useMemo(() => {
+    const catIdMap = new Map<string, ExpenseCategoryItem>();
+    const catNameMap = new Map<string, ExpenseCategoryItem>();
+
+    categoriesList.forEach(c => {
+      if (c.id) catIdMap.set(c.id, c);
+      if (c.name) catNameMap.set(c.name.trim().toLowerCase(), c);
     });
 
-    const grossProfit = totalSalesRevenue - totalCOGS;
-    const totalExpenses = totalOperating + totalAdmin;
-    const profitBeforeTax = grossProfit - totalExpenses;
+    const result: Record<string, CurrencyFinancialStatement> = {};
 
-    return {
-      totalSalesRevenue,
-      totalCollected,
-      totalUnpaid,
-      cogsBreakdown,
-      totalCOGS,
-      grossProfit,
-      operatingBreakdown,
-      totalOperating,
-      adminBreakdown,
-      totalAdmin,
-      totalExpenses,
-      profitBeforeTax,
+    activeCurrenciesInPeriod.forEach(curr => {
+      const docsInCurr = documentData.filter(d => (d.currency || activeCurrenciesInPeriod[0]) === curr);
+      const expInCurr = expensesData.filter(e => (e.currency || activeCurrenciesInPeriod[0]) === curr);
+
+      const totalSalesRevenue = docsInCurr.reduce((sum, d) => sum + (d.total_amount || 0), 0);
+      const totalCollected = docsInCurr.reduce((sum, d) => sum + (d.paid || 0), 0);
+      const totalUnpaid = docsInCurr.reduce((sum, d) => sum + (d.balance || 0), 0);
+
+      const cogsBreakdown: Record<string, number> = {};
+      const operatingBreakdown: Record<string, number> = {};
+      const adminBreakdown: Record<string, number> = {};
+
+      let totalCOGS = 0;
+      let totalOperating = 0;
+      let totalAdmin = 0;
+
+      expInCurr.forEach((exp: any) => {
+        let resolvedCategoryName = 'Other';
+        let classification: 'cogs' | 'operating' | 'admin' = 'operating';
+
+        if (exp.category_id && catIdMap.has(exp.category_id)) {
+          const catObj = catIdMap.get(exp.category_id)!;
+          resolvedCategoryName = catObj.name;
+          classification = catObj.classification || 'operating';
+        } else if (exp.category) {
+          const catObj = catNameMap.get(exp.category.trim().toLowerCase());
+          resolvedCategoryName = exp.category.trim();
+          classification = catObj?.classification || 'operating';
+        } else if (exp.description) {
+          resolvedCategoryName = exp.description.trim();
+        }
+
+        const amt = Number(exp.amount) || 0;
+
+        if (classification === 'cogs') {
+          cogsBreakdown[resolvedCategoryName] = (cogsBreakdown[resolvedCategoryName] || 0) + amt;
+          totalCOGS += amt;
+        } else if (classification === 'admin') {
+          adminBreakdown[resolvedCategoryName] = (adminBreakdown[resolvedCategoryName] || 0) + amt;
+          totalAdmin += amt;
+        } else {
+          operatingBreakdown[resolvedCategoryName] = (operatingBreakdown[resolvedCategoryName] || 0) + amt;
+          totalOperating += amt;
+        }
+      });
+
+      const grossProfit = totalSalesRevenue - totalCOGS;
+      const totalExpenses = totalOperating + totalAdmin;
+      const profitBeforeTax = grossProfit - totalExpenses;
+
+      result[curr] = {
+        currency: curr,
+        totalSalesRevenue,
+        totalCollected,
+        totalUnpaid,
+        cogsBreakdown,
+        totalCOGS,
+        grossProfit,
+        operatingBreakdown,
+        totalOperating,
+        adminBreakdown,
+        totalAdmin,
+        totalExpenses,
+        profitBeforeTax,
+      };
+    });
+
+    return result;
+  }, [activeCurrenciesInPeriod, documentData, expensesData, categoriesList]);
+
+  // Current active statement financials
+  const currentStatement = useMemo(() => {
+    return financialsByCurrency[activeStatementCurrency] || {
+      currency: activeStatementCurrency || 'TZS',
+      totalSalesRevenue: 0,
+      totalCollected: 0,
+      totalUnpaid: 0,
+      cogsBreakdown: {},
+      totalCOGS: 0,
+      grossProfit: 0,
+      operatingBreakdown: {},
+      totalOperating: 0,
+      adminBreakdown: {},
+      totalAdmin: 0,
+      totalExpenses: 0,
+      profitBeforeTax: 0,
     };
-  }, [documentData, expensesData, categoriesList]);
+  }, [financialsByCurrency, activeStatementCurrency]);
 
-  // Dynamic Daily Expense Matrix
+  // Dynamic Daily Expenses Matrix
   const dynamicExpenseMatrix = useMemo(() => {
+    const catIdMap = new Map<string, string>();
+    categoriesList.forEach(c => catIdMap.set(c.id, c.name));
+
     const datesMap: Record<string, Record<string, number>> = {};
     const categoryTotals: Record<string, number> = {};
     const distinctCategoriesSet = new Set<string>();
 
     categoriesList.forEach(c => distinctCategoriesSet.add(c.name));
-    expensesData.forEach(exp => {
-      const d = exp.expense_date;
-      const cat = (exp.category || 'Other').trim();
+
+    const expFiltered = activeStatementCurrency
+      ? expensesData.filter((e: any) => (e.currency || activeCurrenciesInPeriod[0]) === activeStatementCurrency)
+      : expensesData;
+
+    expFiltered.forEach((exp: any) => {
+      const d = exp.expense_date || exp.date || (exp.created_at ? exp.created_at.split('T')[0] : '');
+      if (!d) return;
+
+      let catName = 'Other';
+      if (exp.category_id && catIdMap.has(exp.category_id)) {
+        catName = catIdMap.get(exp.category_id)!;
+      } else if (exp.category) {
+        catName = exp.category.trim();
+      }
+
       const amt = Number(exp.amount) || 0;
-      distinctCategoriesSet.add(cat);
+      distinctCategoriesSet.add(catName);
 
       if (!datesMap[d]) datesMap[d] = {};
-      datesMap[d][cat] = (datesMap[d][cat] || 0) + amt;
-      categoryTotals[cat] = (categoryTotals[cat] || 0) + amt;
+      datesMap[d][catName] = (datesMap[d][catName] || 0) + amt;
+      categoryTotals[catName] = (categoryTotals[catName] || 0) + amt;
     });
 
     const activeCategories = Array.from(distinctCategoriesSet).sort();
@@ -781,9 +868,20 @@ export default function Reports() {
       categoryTotals,
       grandTotal
     };
-  }, [expensesData, categoriesList]);
+  }, [expensesData, categoriesList, activeStatementCurrency, activeCurrenciesInPeriod]);
 
-  // Export Full Financial Statement (CSV / XLSX format)
+  // Invoices grouped by currency
+  const invoiceTotalsByCurrency = useMemo(() => {
+    return documentData.reduce((acc, doc) => {
+      const curr = doc.currency || activeCurrenciesInPeriod[0] || 'TZS';
+      if (!acc[curr]) acc[curr] = { total: 0, paid: 0, balance: 0 };
+      acc[curr].total += doc.total_amount || 0;
+      acc[curr].paid += doc.paid || 0;
+      acc[curr].balance += doc.balance || 0;
+      return acc;
+    }, {} as Record<string, { total: number; paid: number; balance: number }>);
+  }, [documentData, activeCurrenciesInPeriod]);
+
   const exportFullStatementCSV = () => {
     const lines: string[] = [];
     const pushLine = (...cols: any[]) => lines.push(cols.map(c => `"${String(c ?? '').replace(/"/g, '""')}"`).join(','));
@@ -792,49 +890,55 @@ export default function Reports() {
     pushLine('SIMPLE FINANCIAL STATEMENT', `${dateFrom} to ${dateTo}`);
     pushLine('');
 
-    pushLine('PROFIT AND LOSS STATEMENT');
-    pushLine('REVENUE');
-    pushLine('Sale revenue', statementFinancials.totalSalesRevenue);
-    pushLine('Total Revenue', '', statementFinancials.totalSalesRevenue);
-    pushLine('');
+    activeCurrenciesInPeriod.forEach(curr => {
+      const stat = financialsByCurrency[curr];
+      if (!stat) return;
 
-    pushLine('COST OF GOODS SOLD (COGS)');
-    Object.entries(statementFinancials.cogsBreakdown).forEach(([k, v]) => pushLine(k, v));
-    pushLine('Total COGS', '', statementFinancials.totalCOGS);
-    pushLine('');
+      pushLine(`PROFIT AND LOSS STATEMENT (${curr})`);
+      pushLine('REVENUE');
+      pushLine('Sale revenue', stat.totalSalesRevenue);
+      pushLine('Total Revenue', '', stat.totalSalesRevenue);
+      pushLine('');
 
-    pushLine('GROSS PROFIT');
-    pushLine('Total Revenue', '', statementFinancials.totalSalesRevenue);
-    pushLine('Less: Total COGS', '', statementFinancials.totalCOGS);
-    pushLine('GROSS PROFIT', '', statementFinancials.grossProfit);
-    pushLine('');
+      pushLine('COST OF GOODS SOLD (COGS)');
+      Object.entries(stat.cogsBreakdown).forEach(([k, v]) => pushLine(k, v));
+      pushLine('Total COGS', '', stat.totalCOGS);
+      pushLine('');
 
-    pushLine('OPERATING EXPENSES');
-    Object.entries(statementFinancials.operatingBreakdown).forEach(([k, v]) => pushLine(k, v));
-    pushLine('Total Operating Expenses', '', statementFinancials.totalOperating);
-    pushLine('');
+      pushLine('GROSS PROFIT');
+      pushLine('Total Revenue', '', stat.totalSalesRevenue);
+      pushLine('Less: Total COGS', '', stat.totalCOGS);
+      pushLine('GROSS PROFIT', '', stat.grossProfit);
+      pushLine('');
 
-    pushLine('ADMINISTRATIVE & TAX EXPENSES');
-    Object.entries(statementFinancials.adminBreakdown).forEach(([k, v]) => pushLine(k, v));
-    pushLine('Total Administrative Expenses', '', statementFinancials.totalAdmin);
-    pushLine('Total Operating & Admin Expenses', '', statementFinancials.totalExpenses);
-    pushLine('');
+      pushLine('OPERATING EXPENSES');
+      Object.entries(stat.operatingBreakdown).forEach(([k, v]) => pushLine(k, v));
+      pushLine('Total Operating Expenses', '', stat.totalOperating);
+      pushLine('');
 
-    pushLine('PROFIT BEFORE TAX', '', statementFinancials.profitBeforeTax);
-    pushLine('');
+      pushLine('ADMINISTRATIVE & TAX EXPENSES');
+      Object.entries(stat.adminBreakdown).forEach(([k, v]) => pushLine(k, v));
+      pushLine('Total Administrative Expenses', '', stat.totalAdmin);
+      pushLine('Total Operating & Admin Expenses', '', stat.totalExpenses);
+      pushLine('');
 
-    pushLine('SALES SUMMARY', 'Amount');
-    pushLine('Total Sales', statementFinancials.totalSalesRevenue);
-    pushLine('Paid', statementFinancials.totalCollected);
-    pushLine('Unpaid', statementFinancials.totalUnpaid);
-    pushLine('');
-    pushLine('');
+      pushLine('PROFIT BEFORE TAX', '', stat.profitBeforeTax);
+      pushLine('');
+
+      pushLine('SALES SUMMARY', 'Amount');
+      pushLine('Total Sales', stat.totalSalesRevenue);
+      pushLine('Paid', stat.totalCollected);
+      pushLine('Unpaid', stat.totalUnpaid);
+      pushLine('');
+      pushLine('');
+    });
 
     pushLine('INVOICES MAIN');
-    pushLine('Invoice date', 'Company/client', 'Project/Events', 'Location', 'Invoice number', 'Tax rate(VAT)', 'Total Amount', 'Paid', 'Balance', 'Status');
+    pushLine('Invoice date', 'Currency', 'Company/client', 'Project/Events', 'Location', 'Invoice number', 'Tax rate(VAT)', 'Total Amount', 'Paid', 'Balance', 'Status');
     documentData.forEach(inv => {
       pushLine(
         formatDate(inv.issue_date),
+        inv.currency,
         inv.customer_name,
         inv.project_events,
         inv.location,
@@ -846,18 +950,7 @@ export default function Reports() {
         mapStatus(inv.status)
       );
     });
-    pushLine('Total', '', '', '', '', '', statementFinancials.totalSalesRevenue, statementFinancials.totalCollected, statementFinancials.totalUnpaid);
     pushLine('');
-    pushLine('');
-
-    pushLine('DAILY EXPENSES MATRIX');
-    pushLine('DATE', ...dynamicExpenseMatrix.activeCategories, 'TOTAL');
-    dynamicExpenseMatrix.sortedDates.forEach(d => {
-      const rowCats = dynamicExpenseMatrix.activeCategories.map(cat => dynamicExpenseMatrix.datesMap[d]?.[cat] || '');
-      const dayTotal = Object.values(dynamicExpenseMatrix.datesMap[d] || {}).reduce((a, b) => a + b, 0);
-      pushLine(d, ...rowCats, dayTotal);
-    });
-    pushLine('TOTAL', ...dynamicExpenseMatrix.activeCategories.map(cat => dynamicExpenseMatrix.categoryTotals[cat] || 0), dynamicExpenseMatrix.grandTotal);
 
     const csvContent = lines.join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -868,18 +961,16 @@ export default function Reports() {
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-    window.URL.revokeObjectURL(url);
   };
 
-  // Export PDF with Letterhead
   const exportStatementPDF = async () => {
     const element = document.getElementById('financial-statement-doc');
     if (!element) return;
 
     try {
       const opt = {
-        margin: [8, 8, 10, 8],
-        filename: `Financial_Statement_${dateFrom}_to_${dateTo}.pdf`,
+        margin: [0, 0, 5, 0],
+        filename: `Financial_Statement_${activeStatementCurrency}_${dateFrom}_to_${dateTo}.pdf`,
         image: { type: 'jpeg', quality: 0.98 },
         html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff' },
         jsPDF: { orientation: 'portrait', unit: 'mm', format: 'a4', compress: true },
@@ -894,163 +985,54 @@ export default function Reports() {
 
   const exportInvoicesToCSV = (data: DocumentTotal[]) => {
     if (data.length === 0) return;
-
-    const headers: string[] = [];
-    if (visibleColumns.invoiceList.invoiceDate) headers.push('Invoice date');
-    if (visibleColumns.invoiceList.client) headers.push('Company/client');
-    if (visibleColumns.invoiceList.project) headers.push('Project/Events');
-    if (visibleColumns.invoiceList.location) headers.push('Location');
-    if (visibleColumns.invoiceList.invoiceNumber) headers.push('Invoice number2');
-    if (visibleColumns.invoiceList.taxRate) headers.push('Tax rate(VAT)');
-    if (visibleColumns.invoiceList.totalAmount) headers.push('Total Amount');
-    if (visibleColumns.invoiceList.paid) headers.push('Paid');
-    if (visibleColumns.invoiceList.balance) headers.push('Balance');
-    if (visibleColumns.invoiceList.paymentDates) headers.push('Payment Dates');
-    if (visibleColumns.invoiceList.status) headers.push('Status');
-
-    const formatCSVValue = (val: string | number | boolean | null | undefined) => {
-      if (val === null || val === undefined) return '';
-      const stringValue = String(val);
-      return stringValue.includes(',') ? `"${stringValue}"` : stringValue;
-    };
-
-    const rows = data.map(item => {
-      const rowData: string[] = [];
-      const taxRate = `${(item.tax_percent || 0).toFixed(2)}%`;
-      const payHistoryStr = item.payment_history
-        ? item.payment_history.map(pay => `${formatDate(pay.date)} (${pay.amount})`).join('; ')
-        : '';
-
-      if (visibleColumns.invoiceList.invoiceDate) rowData.push(formatCSVValue(formatDate(item.issue_date)));
-      if (visibleColumns.invoiceList.client) rowData.push(formatCSVValue(item.customer_name));
-      if (visibleColumns.invoiceList.project) rowData.push(formatCSVValue(item.project_events));
-      if (visibleColumns.invoiceList.location) rowData.push(formatCSVValue(item.location));
-      if (visibleColumns.invoiceList.invoiceNumber) rowData.push(formatCSVValue(item.document_number));
-      if (visibleColumns.invoiceList.taxRate) rowData.push(formatCSVValue(taxRate));
-      if (visibleColumns.invoiceList.totalAmount) rowData.push(formatCSVValue(item.total_amount));
-      if (visibleColumns.invoiceList.paid) rowData.push(formatCSVValue(item.paid));
-      if (visibleColumns.invoiceList.balance) rowData.push(formatCSVValue(item.balance));
-      if (visibleColumns.invoiceList.paymentDates) rowData.push(formatCSVValue(payHistoryStr));
-      if (visibleColumns.invoiceList.status) rowData.push(formatCSVValue(mapStatus(item.status)));
-
-      return rowData.join(',');
-    });
-
-    const totalsByCurrency = data.reduce((acc, doc) => {
-      const curr = doc.currency || 'USD';
-      if (!acc[curr]) acc[curr] = { total: 0, paid: 0, balance: 0 };
-      acc[curr].total += doc.total_amount || 0;
-      acc[curr].paid += doc.paid || 0;
-      acc[curr].balance += doc.balance || 0;
-      return acc;
-    }, {} as Record<string, { total: number; paid: number; balance: number }>);
-
-    Object.entries(totalsByCurrency).forEach(([currency, sum]) => {
-      const rowData: string[] = [];
-      if (visibleColumns.invoiceList.invoiceDate) rowData.push(formatCSVValue(`Total (${currency})`));
-      else if (headers.length > 0) rowData.push(formatCSVValue(`Total (${currency})`));
-
-      const preCount = [
-        visibleColumns.invoiceList.client,
-        visibleColumns.invoiceList.project,
-        visibleColumns.invoiceList.location,
-        visibleColumns.invoiceList.invoiceNumber,
-        visibleColumns.invoiceList.taxRate
-      ].filter(Boolean).length;
-
-      const actualPreCount = visibleColumns.invoiceList.invoiceDate ? preCount : Math.max(0, preCount - 1);
-      for (let i = 0; i < actualPreCount; i++) rowData.push('');
-
-      if (visibleColumns.invoiceList.totalAmount) rowData.push(formatCSVValue(sum.total));
-      if (visibleColumns.invoiceList.paid) rowData.push(formatCSVValue(sum.paid));
-      if (visibleColumns.invoiceList.balance) rowData.push(formatCSVValue(sum.balance));
-      if (visibleColumns.invoiceList.paymentDates) rowData.push('');
-      if (visibleColumns.invoiceList.status) rowData.push('');
-
-      rows.push(rowData.join(','));
-    });
-
-    const csvContent = [headers.join(','), ...rows].join('\n');
+    const headers = ['Invoice date', 'Currency', 'Company/client', 'Project/Events', 'Location', 'Invoice number', 'Tax rate(VAT)', 'Total Amount', 'Paid', 'Balance', 'Status'];
+    const rows = data.map(item => [
+      formatDate(item.issue_date),
+      item.currency,
+      `"${item.customer_name}"`,
+      `"${item.project_events || ''}"`,
+      `"${item.location || ''}"`,
+      item.document_number,
+      `${(item.tax_percent || 0).toFixed(2)}%`,
+      item.total_amount,
+      item.paid,
+      item.balance,
+      mapStatus(item.status)
+    ]);
+    const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `monthly-invoice-report-${new Date().toISOString().split('T')[0]}.csv`;
+    a.download = `monthly-invoices-${dateFrom}-to-${dateTo}.csv`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-    window.URL.revokeObjectURL(url);
   };
 
   const exportPaymentsToCSV = (data: PaymentLogEntry[]) => {
     if (data.length === 0) return;
-
-    const headers: string[] = [];
-    if (visibleColumns.paymentsLog.paymentDate) headers.push('Payment Date');
-    if (visibleColumns.paymentsLog.invoiceNumber) headers.push('Invoice Number');
-    if (visibleColumns.paymentsLog.client) headers.push('Company/Client');
-    if (visibleColumns.paymentsLog.account) headers.push('Account Received');
-    if (visibleColumns.paymentsLog.paymentMethod) headers.push('Method');
-    if (visibleColumns.paymentsLog.reference) headers.push('Reference');
-    if (visibleColumns.paymentsLog.notes) headers.push('Notes');
-    if (visibleColumns.paymentsLog.amount) headers.push('Amount');
-
-    const formatCSVValue = (val: string | number | boolean | null | undefined) => {
-      if (val === null || val === undefined) return '';
-      const stringValue = String(val);
-      return stringValue.includes(',') ? `"${stringValue}"` : stringValue;
-    };
-
-    const rows = data.map(item => {
-      const rowData: string[] = [];
-      if (visibleColumns.paymentsLog.paymentDate) rowData.push(formatCSVValue(new Date(item.payment_date).toLocaleDateString()));
-      if (visibleColumns.paymentsLog.invoiceNumber) rowData.push(formatCSVValue(item.document_number));
-      if (visibleColumns.paymentsLog.client) rowData.push(formatCSVValue(item.customer_name));
-      if (visibleColumns.paymentsLog.account) rowData.push(formatCSVValue(item.account_name));
-      if (visibleColumns.paymentsLog.paymentMethod) rowData.push(formatCSVValue(item.payment_method.replace('_', ' ')));
-      if (visibleColumns.paymentsLog.reference) rowData.push(formatCSVValue(item.reference_number || ''));
-      if (visibleColumns.paymentsLog.notes) rowData.push(formatCSVValue(item.notes || ''));
-      if (visibleColumns.paymentsLog.amount) rowData.push(formatCSVValue(item.amount));
-      return rowData.join(',');
-    });
-
-    const totalsByCurrency = data.reduce((acc, pay) => {
-      const curr = pay.currency || 'USD';
-      acc[curr] = (acc[curr] || 0) + pay.amount;
-      return acc;
-    }, {} as Record<string, number>);
-
-    Object.entries(totalsByCurrency).forEach(([currency, total]) => {
-      const rowData: string[] = [];
-      if (visibleColumns.paymentsLog.paymentDate) rowData.push(formatCSVValue(`Total (${currency})`));
-      else if (headers.length > 0) rowData.push(formatCSVValue(`Total (${currency})`));
-
-      const preCount = [
-        visibleColumns.paymentsLog.invoiceNumber,
-        visibleColumns.paymentsLog.client,
-        visibleColumns.paymentsLog.account,
-        visibleColumns.paymentsLog.paymentMethod,
-        visibleColumns.paymentsLog.reference,
-        visibleColumns.paymentsLog.notes
-      ].filter(Boolean).length;
-
-      const actualPreCount = visibleColumns.paymentsLog.paymentDate ? preCount : Math.max(0, preCount - 1);
-      for (let i = 0; i < actualPreCount; i++) rowData.push('');
-
-      if (visibleColumns.paymentsLog.amount) rowData.push(formatCSVValue(total));
-      rows.push(rowData.join(','));
-    });
-
-    const csvContent = [headers.join(','), ...rows].join('\n');
+    const headers = ['Payment Date', 'Currency', 'Invoice Number', 'Company/Client', 'Account Received', 'Method', 'Reference', 'Notes', 'Amount'];
+    const rows = data.map(item => [
+      new Date(item.payment_date).toLocaleDateString(),
+      item.currency,
+      item.document_number,
+      `"${item.customer_name}"`,
+      `"${item.account_name}"`,
+      item.payment_method,
+      `"${item.reference_number || ''}"`,
+      `"${item.notes || ''}"`,
+      item.amount
+    ]);
+    const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `payments-received-log-${new Date().toISOString().split('T')[0]}.csv`;
+    a.download = `payments-received-${dateFrom}-to-${dateTo}.csv`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-    window.URL.revokeObjectURL(url);
   };
 
   const exportToCSV = (data: any[], filename: string) => {
@@ -1072,23 +1054,11 @@ export default function Reports() {
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${filename}-${new Date().toISOString().split('T')[0]}.csv`;
+    a.download = `${filename}-${dateFrom}-to-${dateTo}.csv`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-    window.URL.revokeObjectURL(url);
   };
-
-  const invoiceTotalsByCurrency = useMemo(() => {
-    return documentData.reduce((acc, doc) => {
-      const curr = doc.currency || 'USD';
-      if (!acc[curr]) acc[curr] = { total: 0, paid: 0, balance: 0 };
-      acc[curr].total += doc.total_amount || 0;
-      acc[curr].paid += doc.paid || 0;
-      acc[curr].balance += doc.balance || 0;
-      return acc;
-    }, {} as Record<string, { total: number; paid: number; balance: number }>);
-  }, [documentData]);
 
   if (initialLoading) {
     return (
@@ -1107,7 +1077,7 @@ export default function Reports() {
           <div>
             <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Financial Reports</h1>
             <p className="text-xs sm:text-sm text-gray-500 mt-1">
-              Analyze monthly profit & loss, customer collections, and operational expense matrices.
+              Multi-currency financial statements, invoice ledgers, and operational matrices.
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -1146,14 +1116,14 @@ export default function Reports() {
               />
             </div>
             <div>
-              <label className="block text-xs font-semibold text-gray-600 mb-1">Currency</label>
+              <label className="block text-xs font-semibold text-gray-600 mb-1">Currency Filter</label>
               <select
                 value={tempSelectedCurrency}
                 onChange={(e) => setTempSelectedCurrency(e.target.value)}
                 disabled={loading}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-black"
               >
-                <option value="all">All Currencies</option>
+                <option value="all">All Currencies (Multi-Currency)</option>
                 {currencies.map(curr => (
                   <option key={curr.code} value={curr.code}>
                     {curr.code} ({curr.symbol})
@@ -1169,7 +1139,7 @@ export default function Reports() {
           </div>
         </div>
 
-        {/* Tab Navigation */}
+        {/* Tab Switcher */}
         <div className="border-b border-gray-200 mb-6">
           <nav className="-mb-px flex gap-6">
             <button
@@ -1202,27 +1172,52 @@ export default function Reports() {
         {/* ========================================================================= */}
         {activeReportTab === 'statement' ? (
           <div className="space-y-6">
-            <div className="flex justify-end gap-3">
-              <Button onClick={exportFullStatementCSV} variant="secondary">
-                <FileSpreadsheet className="w-4 h-4 mr-2 text-emerald-600" />
-                Download Excel / CSV
-              </Button>
-              <Button onClick={exportStatementPDF} variant="primary">
-                <FileDown className="w-4 h-4 mr-2" />
-                Download PDF
-              </Button>
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+              
+              {/* Multi-Currency Pill Switcher */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs font-bold text-gray-500 uppercase flex items-center gap-1">
+                  <Coins className="w-3.5 h-3.5" /> Currency View:
+                </span>
+                {activeCurrenciesInPeriod.map(curr => (
+                  <button
+                    key={curr}
+                    onClick={() => setActiveStatementCurrency(curr)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
+                      activeStatementCurrency === curr
+                        ? 'bg-black text-white shadow-sm'
+                        : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50'
+                    }`}
+                  >
+                    {curr}
+                  </button>
+                ))}
+              </div>
+
+              <div className="flex gap-2 w-full sm:w-auto">
+                <Button onClick={exportFullStatementCSV} variant="secondary" className="flex-1 sm:flex-initial">
+                  <FileSpreadsheet className="w-4 h-4 mr-1 text-emerald-600" />
+                  Excel / CSV
+                </Button>
+                <Button onClick={exportStatementPDF} variant="primary" className="flex-1 sm:flex-initial">
+                  <FileDown className="w-4 h-4 mr-1" />
+                  PDF ({activeStatementCurrency})
+                </Button>
+              </div>
             </div>
 
             {/* Printable Document Sheet Container */}
             <div id="financial-statement-doc" className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 sm:p-10 space-y-8">
               
-              {/* Optional Letterhead Header Banner */}
+              {/* Clean Letterhead Banner (Exact natural aspect ratio, no squishing) */}
               {companySettings?.letterhead_url ? (
-                <div className="-mx-6 sm:-mx-10 -mt-6 sm:-mt-10 mb-6 overflow-hidden rounded-t-xl">
+                <div className="-mx-6 sm:-mx-10 -mt-6 sm:-mt-10 mb-6 overflow-hidden rounded-t-xl" id="letterhead-container">
                   <img
+                    id="letterhead-image"
                     src={companySettings.letterhead_url}
                     alt="Letterhead"
-                    className="w-full h-auto object-cover max-h-36"
+                    className="block w-full h-auto"
+                    style={{ width: '100%', height: 'auto', display: 'block' }}
                   />
                 </div>
               ) : (
@@ -1250,9 +1245,11 @@ export default function Reports() {
               <div className="statement-section-break">
                 <div className="border-b-2 border-black pb-2 mb-4 flex justify-between items-center">
                   <h3 className="text-base font-bold uppercase tracking-wider text-gray-900">
-                    1. Profit & Loss Statement (Income Statement)
+                    1. Profit & Loss Statement ({activeStatementCurrency})
                   </h3>
-                  <span className="text-xs text-gray-500">All figures in {selectedCurrency === 'all' ? 'TZS / Converted' : selectedCurrency}</span>
+                  <span className="text-xs font-semibold px-2.5 py-1 bg-gray-100 rounded-md text-gray-700">
+                    Currency: {activeStatementCurrency}
+                  </span>
                 </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -1262,12 +1259,12 @@ export default function Reports() {
                       <div className="font-bold text-gray-900 uppercase tracking-wide border-b pb-1 font-sans text-xs">Revenue</div>
                       <div className="mt-2 space-y-1">
                         <div className="flex justify-between py-1">
-                          <span className="text-gray-600">Sale Revenue (Invoices)</span>
-                          <span className="font-semibold text-gray-900">{formatCurrency(statementFinancials.totalSalesRevenue)}</span>
+                          <span className="text-gray-600">Sale Revenue ({activeStatementCurrency})</span>
+                          <span className="font-semibold text-gray-900">{formatCurrency(currentStatement.totalSalesRevenue, activeStatementCurrency)}</span>
                         </div>
                         <div className="flex justify-between font-bold border-t pt-1.5 text-emerald-700">
                           <span>Total Revenue</span>
-                          <span>{formatCurrency(statementFinancials.totalSalesRevenue)}</span>
+                          <span>{formatCurrency(currentStatement.totalSalesRevenue, activeStatementCurrency)}</span>
                         </div>
                       </div>
                     </div>
@@ -1275,26 +1272,26 @@ export default function Reports() {
                     <div>
                       <div className="font-bold text-gray-900 uppercase tracking-wide border-b pb-1 font-sans text-xs">Cost of Goods Sold (COGS)</div>
                       <div className="mt-2 space-y-1">
-                        {Object.keys(statementFinancials.cogsBreakdown).length > 0 ? (
-                          Object.entries(statementFinancials.cogsBreakdown).map(([cat, amt]) => (
+                        {Object.keys(currentStatement.cogsBreakdown).length > 0 ? (
+                          Object.entries(currentStatement.cogsBreakdown).map(([cat, amt]) => (
                             <div key={cat} className="flex justify-between py-0.5">
-                              <span className="text-gray-600">{cat} (Direct)</span>
-                              <span className="font-medium text-gray-900">{formatCurrency(amt)}</span>
+                              <span className="text-gray-600">{cat}</span>
+                              <span className="font-medium text-gray-900">{formatCurrency(amt, activeStatementCurrency)}</span>
                             </div>
                           ))
                         ) : (
-                          <div className="text-gray-400 italic py-1">No COGS / Direct labor recorded.</div>
+                          <div className="text-gray-400 italic py-1">No COGS recorded for {activeStatementCurrency}.</div>
                         )}
                         <div className="flex justify-between font-bold border-t pt-1.5 text-red-700">
                           <span>Total COGS</span>
-                          <span>{formatCurrency(statementFinancials.totalCOGS)}</span>
+                          <span>{formatCurrency(currentStatement.totalCOGS, activeStatementCurrency)}</span>
                         </div>
                       </div>
                     </div>
 
                     <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex justify-between font-bold text-blue-900 font-sans text-sm">
                       <span>GROSS PROFIT</span>
-                      <span>{formatCurrency(statementFinancials.grossProfit)}</span>
+                      <span>{formatCurrency(currentStatement.grossProfit, activeStatementCurrency)}</span>
                     </div>
                   </div>
 
@@ -1303,46 +1300,46 @@ export default function Reports() {
                     <div>
                       <div className="font-bold text-gray-900 uppercase tracking-wide border-b pb-1 font-sans text-xs">Operating Expenses</div>
                       <div className="mt-2 space-y-1 max-h-36 overflow-y-auto pr-1">
-                        {Object.keys(statementFinancials.operatingBreakdown).length > 0 ? (
-                          Object.entries(statementFinancials.operatingBreakdown).map(([cat, amt]) => (
+                        {Object.keys(currentStatement.operatingBreakdown).length > 0 ? (
+                          Object.entries(currentStatement.operatingBreakdown).map(([cat, amt]) => (
                             <div key={cat} className="flex justify-between py-0.5">
                               <span className="text-gray-600">{cat}</span>
-                              <span className="font-medium text-gray-900">{formatCurrency(amt)}</span>
+                              <span className="font-medium text-gray-900">{formatCurrency(amt, activeStatementCurrency)}</span>
                             </div>
                           ))
                         ) : (
-                          <div className="text-gray-400 italic py-1">No operating expenses recorded.</div>
+                          <div className="text-gray-400 italic py-1">No operating expenses for {activeStatementCurrency}.</div>
                         )}
                       </div>
                       <div className="flex justify-between font-bold border-t pt-1.5 text-gray-900 mt-1">
                         <span>Total Operating Expenses</span>
-                        <span>{formatCurrency(statementFinancials.totalOperating)}</span>
+                        <span>{formatCurrency(currentStatement.totalOperating, activeStatementCurrency)}</span>
                       </div>
                     </div>
 
                     <div>
                       <div className="font-bold text-gray-900 uppercase tracking-wide border-b pb-1 font-sans text-xs">Administrative & Tax Expenses</div>
                       <div className="mt-2 space-y-1 max-h-32 overflow-y-auto pr-1">
-                        {Object.keys(statementFinancials.adminBreakdown).length > 0 ? (
-                          Object.entries(statementFinancials.adminBreakdown).map(([cat, amt]) => (
+                        {Object.keys(currentStatement.adminBreakdown).length > 0 ? (
+                          Object.entries(currentStatement.adminBreakdown).map(([cat, amt]) => (
                             <div key={cat} className="flex justify-between py-0.5">
                               <span className="text-gray-600">{cat}</span>
-                              <span className="font-medium text-gray-900">{formatCurrency(amt)}</span>
+                              <span className="font-medium text-gray-900">{formatCurrency(amt, activeStatementCurrency)}</span>
                             </div>
                           ))
                         ) : (
-                          <div className="text-gray-400 italic py-1">No admin/tax expenses recorded.</div>
+                          <div className="text-gray-400 italic py-1">No admin expenses for {activeStatementCurrency}.</div>
                         )}
                       </div>
                       <div className="flex justify-between font-bold border-t pt-1.5 text-gray-900 mt-1">
                         <span>Total Admin Expenses</span>
-                        <span>{formatCurrency(statementFinancials.totalAdmin)}</span>
+                        <span>{formatCurrency(currentStatement.totalAdmin, activeStatementCurrency)}</span>
                       </div>
                     </div>
 
                     <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 flex justify-between font-bold text-emerald-900 font-sans text-sm">
                       <span>PROFIT BEFORE TAX</span>
-                      <span>{formatCurrency(statementFinancials.profitBeforeTax)}</span>
+                      <span>{formatCurrency(currentStatement.profitBeforeTax, activeStatementCurrency)}</span>
                     </div>
                   </div>
                 </div>
@@ -1354,7 +1351,7 @@ export default function Reports() {
                   <h3 className="text-base font-bold uppercase tracking-wider text-gray-900">
                     2. Invoices Main (Monthly Invoice Ledger)
                   </h3>
-                  <span className="text-xs text-gray-500">{documentData.length} invoices in period</span>
+                  <span className="text-xs text-gray-500">{documentData.length} invoices recorded</span>
                 </div>
 
                 <div className="overflow-x-auto">
@@ -1362,6 +1359,7 @@ export default function Reports() {
                     <thead className="bg-gray-100">
                       <tr className="font-bold text-gray-700">
                         <th className="px-2.5 py-2 text-left">Invoice Date</th>
+                        <th className="px-2.5 py-2 text-left">Curr</th>
                         <th className="px-2.5 py-2 text-left">Company/Client</th>
                         <th className="px-2.5 py-2 text-left">Project/Events</th>
                         <th className="px-2.5 py-2 text-left">Location</th>
@@ -1377,6 +1375,7 @@ export default function Reports() {
                       {documentData.map((item) => (
                         <tr key={item.document_id} className="hover:bg-gray-50">
                           <td className="px-2.5 py-2 whitespace-nowrap text-gray-900 font-mono">{formatDate(item.issue_date)}</td>
+                          <td className="px-2.5 py-2 font-bold text-gray-500">{item.currency}</td>
                           <td className="px-2.5 py-2 font-medium text-gray-900">{item.customer_name}</td>
                           <td className="px-2.5 py-2 text-gray-600">{item.project_events || '—'}</td>
                           <td className="px-2.5 py-2 text-gray-600">{item.location || '—'}</td>
@@ -1398,29 +1397,38 @@ export default function Reports() {
                       ))}
                     </tbody>
                     <tfoot className="bg-gray-100 font-bold border-t-2 border-gray-400">
-                      <tr>
-                        <td colSpan={6} className="px-2.5 py-2.5 text-right uppercase text-gray-700">Total:</td>
-                        <td className="px-2.5 py-2.5 text-right font-mono text-gray-900">{formatCurrency(statementFinancials.totalSalesRevenue)}</td>
-                        <td className="px-2.5 py-2.5 text-right font-mono text-emerald-700">{formatCurrency(statementFinancials.totalCollected)}</td>
-                        <td className="px-2.5 py-2.5 text-right font-mono text-amber-700">{formatCurrency(statementFinancials.totalUnpaid)}</td>
-                        <td></td>
-                      </tr>
+                      {Object.entries(invoiceTotalsByCurrency).map(([curr, totals]) => (
+                        <tr key={curr}>
+                          <td colSpan={7} className="px-2.5 py-2 text-right uppercase text-gray-700">Total ({curr}):</td>
+                          <td className="px-2.5 py-2 text-right font-mono text-gray-900">{formatCurrency(totals.total, curr)}</td>
+                          <td className="px-2.5 py-2 text-right font-mono text-emerald-700">{formatCurrency(totals.paid, curr)}</td>
+                          <td className="px-2.5 py-2 text-right font-mono text-amber-700">{formatCurrency(totals.balance, curr)}</td>
+                          <td></td>
+                        </tr>
+                      ))}
                     </tfoot>
                   </table>
                 </div>
 
-                {/* Styled Summary Card at bottom right */}
+                {/* Multi-Currency Summary Cards */}
                 <div className="flex justify-end mt-4">
-                  <div className="w-full max-w-xs bg-[#e2efda] border border-[#a9d18e] rounded-lg p-3 font-mono text-xs text-gray-800 shadow-sm">
-                    <div className="font-bold text-[#375623] mb-1.5 border-b border-[#a9d18e] pb-1 font-sans text-xs uppercase">Summary</div>
-                    <div className="grid grid-cols-2 gap-y-1.5">
-                      <div className="font-bold text-[#375623]">Total sales:</div>
-                      <div className="text-right font-bold text-[#375623]">{formatCurrency(statementFinancials.totalSalesRevenue)}</div>
-                      <div className="font-bold text-[#375623]">Paid:</div>
-                      <div className="text-right font-bold text-[#375623]">{formatCurrency(statementFinancials.totalCollected)}</div>
-                      <div className="font-bold text-[#375623]">Unpaid:</div>
-                      <div className="text-right font-bold text-[#375623]">{formatCurrency(statementFinancials.totalUnpaid)}</div>
-                    </div>
+                  <div className="w-full max-w-sm space-y-3">
+                    {Object.entries(invoiceTotalsByCurrency).map(([curr, totals]) => (
+                      <div key={curr} className="bg-[#e2efda] border border-[#a9d18e] rounded-lg p-3 font-mono text-xs text-gray-800 shadow-sm">
+                        <div className="font-bold text-[#375623] mb-1.5 border-b border-[#a9d18e] pb-1 font-sans text-xs uppercase flex justify-between">
+                          <span>{curr} Summary</span>
+                          <span>Invoiced</span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-y-1.5">
+                          <div className="font-bold text-[#375623]">Total sales:</div>
+                          <div className="text-right font-bold text-[#375623]">{formatCurrency(totals.total, curr)}</div>
+                          <div className="font-bold text-[#375623]">Paid:</div>
+                          <div className="text-right font-bold text-[#375623]">{formatCurrency(totals.paid, curr)}</div>
+                          <div className="font-bold text-[#375623]">Unpaid:</div>
+                          <div className="text-right font-bold text-[#375623]">{formatCurrency(totals.balance, curr)}</div>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
               </div>
@@ -1429,14 +1437,14 @@ export default function Reports() {
               <div className="statement-section-break">
                 <div className="border-b-2 border-black pb-2 mb-4 flex justify-between items-center">
                   <h3 className="text-base font-bold uppercase tracking-wider text-gray-900">
-                    3. Daily Expenses Matrix
+                    3. Daily Expenses Matrix ({activeStatementCurrency})
                   </h3>
-                  <span className="text-xs text-gray-500">Expenses grouped by date and dynamic categories</span>
+                  <span className="text-xs text-gray-500">Expenses for currency: {activeStatementCurrency}</span>
                 </div>
 
                 {dynamicExpenseMatrix.sortedDates.length === 0 ? (
                   <div className="text-center py-6 text-gray-500 text-xs bg-gray-50 rounded-lg">
-                    No expense records found in this period.
+                    No expense records found for {activeStatementCurrency} in this period.
                   </div>
                 ) : (
                   <div className="overflow-x-auto max-h-[450px]">
@@ -1459,11 +1467,11 @@ export default function Reports() {
                               <td className="px-2 py-1.5 font-sans font-medium text-gray-900 whitespace-nowrap bg-gray-50 sticky left-0 z-10">{dateStr}</td>
                               {dynamicExpenseMatrix.activeCategories.map(cat => (
                                 <td key={cat} className="px-2 py-1.5 text-right text-gray-700 whitespace-nowrap">
-                                  {dayMap[cat] ? formatCurrency(dayMap[cat]) : '—'}
+                                  {dayMap[cat] ? formatCurrency(dayMap[cat], activeStatementCurrency) : '—'}
                                 </td>
                               ))}
                               <td className="px-2 py-1.5 text-right font-bold text-red-600 bg-gray-50 whitespace-nowrap">
-                                {formatCurrency(dayTotal)}
+                                {formatCurrency(dayTotal, activeStatementCurrency)}
                               </td>
                             </tr>
                           );
@@ -1474,11 +1482,11 @@ export default function Reports() {
                           <td className="px-2 py-2 text-gray-900 font-sans sticky left-0 z-20 bg-gray-200">TOTAL</td>
                           {dynamicExpenseMatrix.activeCategories.map(cat => (
                             <td key={cat} className="px-2 py-2 text-right whitespace-nowrap">
-                              {dynamicExpenseMatrix.categoryTotals[cat] ? formatCurrency(dynamicExpenseMatrix.categoryTotals[cat]) : '—'}
+                              {dynamicExpenseMatrix.categoryTotals[cat] ? formatCurrency(dynamicExpenseMatrix.categoryTotals[cat], activeStatementCurrency) : '—'}
                             </td>
                           ))}
                           <td className="px-2 py-2 text-right text-red-800 bg-gray-300 whitespace-nowrap">
-                            {formatCurrency(dynamicExpenseMatrix.grandTotal)}
+                            {formatCurrency(dynamicExpenseMatrix.grandTotal, activeStatementCurrency)}
                           </td>
                         </tr>
                       </tfoot>
@@ -1547,47 +1555,6 @@ export default function Reports() {
               )}
             </div>
 
-            {/* Top Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-              <div className="bg-white rounded-lg shadow p-6">
-                <div className="flex items-center gap-2 mb-2">
-                  <DollarSign className="w-5 h-5 text-emerald-600" />
-                  <h3 className="text-sm font-medium text-gray-600">Total Sales</h3>
-                </div>
-                <p className="text-2xl font-bold text-gray-900">{formatCurrency(statementFinancials.totalSalesRevenue)}</p>
-                <p className="text-xs text-gray-500 mt-1">{documentData.length} invoices issued</p>
-              </div>
-
-              <div className="bg-white rounded-lg shadow p-6">
-                <div className="flex items-center gap-2 mb-2">
-                  <FileText className="w-5 h-5 text-amber-600" />
-                  <h3 className="text-sm font-medium text-gray-600">Outstanding</h3>
-                </div>
-                <p className="text-2xl font-bold text-amber-600">{formatCurrency(statementFinancials.totalUnpaid)}</p>
-                <p className="text-xs text-gray-500 mt-1">{outstandingData.length} unpaid invoices</p>
-              </div>
-
-              <div className="bg-white rounded-lg shadow p-6">
-                <div className="flex items-center gap-2 mb-2">
-                  <Users className="w-5 h-5 text-slate-600" />
-                  <h3 className="text-sm font-medium text-gray-600">Total Customers</h3>
-                </div>
-                <p className="text-2xl font-bold text-gray-900">{customerData.length}</p>
-                <p className="text-xs text-gray-500 mt-1">Active customers</p>
-              </div>
-
-              <div className="bg-white rounded-lg shadow p-6">
-                <div className="flex items-center gap-2 mb-2">
-                  <TrendingUp className="w-5 h-5 text-emerald-600" />
-                  <h3 className="text-sm font-medium text-gray-600">Avg Invoice Value</h3>
-                </div>
-                <p className="text-2xl font-bold text-gray-900">
-                  {formatCurrency(documentData.length > 0 ? statementFinancials.totalSalesRevenue / documentData.length : 0)}
-                </p>
-                <p className="text-xs text-gray-500 mt-1">Per invoice</p>
-              </div>
-            </div>
-
             {/* Standard Collapsible Sections */}
             <div className="space-y-6">
               {/* Profit & Loss Overview */}
@@ -1633,19 +1600,17 @@ export default function Reports() {
                           </thead>
                           <tbody className="bg-white divide-y divide-gray-200">
                             {profitLossData.map((item, idx) => (
-                              <React.Fragment key={idx}>
-                                <tr className="hover:bg-gray-50">
-                                  <td className="px-4 py-3 text-sm text-gray-900">
-                                    {new Date(item.year, item.month - 1).toLocaleDateString('en-US', { year: 'numeric', month: 'long' })}
-                                  </td>
-                                  <td className="px-4 py-3 text-sm text-gray-600">{item.currency}</td>
-                                  <td className="px-4 py-3 text-sm text-right text-emerald-600 font-semibold">{formatCurrency(Number(item.total_revenue), item.currency)}</td>
-                                  <td className="px-4 py-3 text-sm text-right text-red-600 font-semibold">{formatCurrency(Number(item.total_expenses), item.currency)}</td>
-                                  <td className={`px-4 py-3 text-sm text-right font-bold ${Number(item.net_profit) >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                                    {formatCurrency(Number(item.net_profit), item.currency)}
-                                  </td>
-                                </tr>
-                              </React.Fragment>
+                              <tr key={idx} className="hover:bg-gray-50">
+                                <td className="px-4 py-3 text-sm text-gray-900">
+                                  {new Date(item.year, item.month - 1).toLocaleDateString('en-US', { year: 'numeric', month: 'long' })}
+                                </td>
+                                <td className="px-4 py-3 text-sm text-gray-600">{item.currency}</td>
+                                <td className="px-4 py-3 text-sm text-right text-emerald-600 font-semibold">{formatCurrency(Number(item.total_revenue), item.currency)}</td>
+                                <td className="px-4 py-3 text-sm text-right text-red-600 font-semibold">{formatCurrency(Number(item.total_expenses), item.currency)}</td>
+                                <td className={`px-4 py-3 text-sm text-right font-bold ${Number(item.net_profit) >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                                  {formatCurrency(Number(item.net_profit), item.currency)}
+                                </td>
+                              </tr>
                             ))}
                           </tbody>
                         </table>
@@ -1690,6 +1655,7 @@ export default function Reports() {
                           <thead className="bg-gray-50">
                             <tr>
                               {visibleColumns.invoiceList.invoiceDate && <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Invoice date</th>}
+                              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Curr</th>
                               {visibleColumns.invoiceList.client && <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Company/client</th>}
                               {visibleColumns.invoiceList.project && <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Project/Events</th>}
                               {visibleColumns.invoiceList.location && <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Location</th>}
@@ -1705,6 +1671,7 @@ export default function Reports() {
                             {documentData.map((item) => (
                               <tr key={item.document_id} className="hover:bg-gray-50">
                                 {visibleColumns.invoiceList.invoiceDate && <td className="px-4 py-3 text-sm text-gray-900 whitespace-nowrap">{formatDate(item.issue_date)}</td>}
+                                <td className="px-4 py-3 text-sm font-bold text-gray-500">{item.currency}</td>
                                 {visibleColumns.invoiceList.client && <td className="px-4 py-3 text-sm text-gray-900">{item.customer_name}</td>}
                                 {visibleColumns.invoiceList.project && <td className="px-4 py-3 text-sm text-gray-900">{item.project_events || '—'}</td>}
                                 {visibleColumns.invoiceList.location && <td className="px-4 py-3 text-sm text-gray-900">{item.location || '—'}</td>}
@@ -1769,6 +1736,7 @@ export default function Reports() {
                           <thead className="bg-gray-50">
                             <tr>
                               <th className="px-3 py-2.5 text-left font-medium text-gray-500 uppercase">Date</th>
+                              <th className="px-3 py-2.5 text-left font-medium text-gray-500 uppercase">Curr</th>
                               <th className="px-3 py-2.5 text-left font-medium text-gray-500 uppercase">Invoice #</th>
                               <th className="px-3 py-2.5 text-left font-medium text-gray-500 uppercase">Client</th>
                               <th className="px-3 py-2.5 text-left font-medium text-gray-500 uppercase">Account</th>
@@ -1780,6 +1748,7 @@ export default function Reports() {
                             {paymentsLogData.map((item) => (
                               <tr key={item.id} className="hover:bg-gray-50">
                                 <td className="px-3 py-2 text-gray-900 whitespace-nowrap">{new Date(item.payment_date).toLocaleDateString()}</td>
+                                <td className="px-3 py-2 font-bold text-gray-500">{item.currency}</td>
                                 <td className="px-3 py-2 font-medium text-gray-900">{item.document_number}</td>
                                 <td className="px-3 py-2 text-gray-900">{item.customer_name}</td>
                                 <td className="px-3 py-2 text-gray-600">{item.account_name}</td>
