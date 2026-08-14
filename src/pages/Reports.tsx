@@ -167,6 +167,7 @@ interface VisibleSections {
 interface VisibleColumns {
   invoiceList: {
     invoiceDate: boolean;
+    currency: boolean;
     client: boolean;
     project: boolean;
     location: boolean;
@@ -180,6 +181,7 @@ interface VisibleColumns {
   };
   paymentsLog: {
     paymentDate: boolean;
+    currency: boolean;
     invoiceNumber: boolean;
     client: boolean;
     account: boolean;
@@ -224,6 +226,7 @@ const DEFAULT_VISIBLE_SECTIONS: VisibleSections = {
 const DEFAULT_VISIBLE_COLUMNS: VisibleColumns = {
   invoiceList: {
     invoiceDate: true,
+    currency: true,
     client: true,
     project: true,
     location: true,
@@ -237,6 +240,7 @@ const DEFAULT_VISIBLE_COLUMNS: VisibleColumns = {
   },
   paymentsLog: {
     paymentDate: true,
+    currency: true,
     invoiceNumber: true,
     client: true,
     account: true,
@@ -875,12 +879,11 @@ export default function Reports() {
     };
   }, [financialsByCurrency, activeStatementCurrency]);
 
+  // Dynamic Daily Expenses Matrix - showing active categories only
   const dynamicExpenseMatrix = useMemo(() => {
     const datesMap: Record<string, Record<string, number>> = {};
     const categoryTotals: Record<string, number> = {};
-    const distinctCategoriesSet = new Set<string>();
-
-    categoriesList.forEach(c => distinctCategoriesSet.add(c.name));
+    const distinctActiveCategories = new Set<string>();
 
     const expFiltered = expensesData.filter((e: ExpenseRow) => {
       const cCode = e.currency_id ? currencyIdToCodeMap.get(e.currency_id) : activeCurrenciesInPeriod[0];
@@ -895,14 +898,16 @@ export default function Reports() {
       const catName = matched ? matched.name : 'Unassigned Expenses';
       const amt = Number(exp.amount) || 0;
 
-      distinctCategoriesSet.add(catName);
+      if (amt > 0) {
+        distinctActiveCategories.add(catName);
+      }
 
       if (!datesMap[d]) datesMap[d] = {};
       datesMap[d][catName] = (datesMap[d][catName] || 0) + amt;
       categoryTotals[catName] = (categoryTotals[catName] || 0) + amt;
     });
 
-    const activeCategories = Array.from(distinctCategoriesSet).sort();
+    const activeCategories = Array.from(distinctActiveCategories).sort();
     const sortedDates = Object.keys(datesMap).sort();
     const grandTotal = Object.values(categoryTotals).reduce((a, b) => a + b, 0);
 
@@ -913,7 +918,7 @@ export default function Reports() {
       categoryTotals,
       grandTotal
     };
-  }, [expensesData, categoriesList, activeStatementCurrency, activeCurrenciesInPeriod, categoryLookup, currencyIdToCodeMap]);
+  }, [expensesData, activeStatementCurrency, activeCurrenciesInPeriod, categoryLookup, currencyIdToCodeMap]);
 
   const invoiceTotalsByCurrency = useMemo(() => {
     return documentData.reduce((acc, doc) => {
@@ -1016,9 +1021,9 @@ export default function Reports() {
         margin: 5,
         filename: 'Financial_Statement_' + activeStatementCurrency + '_' + dateFrom + '_to_' + dateTo + '.pdf',
         image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff' },
+        html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff', scrollY: 0 },
         jsPDF: { orientation: 'portrait', unit: 'mm', format: 'a4', compress: true },
-        pagebreak: { mode: ['css', 'legacy'] }
+        pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
       };
       await html2pdf().set(opt).from(element).save();
     } catch (err) {
@@ -1107,19 +1112,19 @@ export default function Reports() {
   if (initialLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
-        <div className="text-gray-500">Loading reports...</div>
+        <div className="text-gray-500 font-sans">Loading reports...</div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8">
+    <div className="min-h-screen bg-gray-50 py-8 font-sans antialiased text-gray-900">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         
         {/* Top Header */}
         <div className="mb-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">Financial Reports</h1>
+            <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 tracking-tight">Financial Reports</h1>
             <p className="text-xs sm:text-sm text-gray-500 mt-1">
               Multi-currency financial statements, invoice ledgers, and operational matrices.
             </p>
@@ -1220,16 +1225,16 @@ export default function Reports() {
               
               {/* Multi-Currency Pill Switcher */}
               <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-xs font-bold text-gray-500 uppercase flex items-center gap-1">
+                <span className="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1">
                   <Coins className="w-3.5 h-3.5" /> Currency View:
                 </span>
                 {activeCurrenciesInPeriod.map(curr => (
                   <button
                     key={curr}
                     onClick={() => setActiveStatementCurrency(curr)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
                       activeStatementCurrency === curr
-                        ? 'bg-black text-white shadow-sm'
+                        ? 'bg-black text-white shadow-sm ring-2 ring-black ring-offset-1'
                         : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50'
                     }`}
                   >
@@ -1240,20 +1245,20 @@ export default function Reports() {
 
               <div className="flex gap-2 w-full sm:w-auto">
                 <Button onClick={exportFullStatementCSV} variant="secondary" className="flex-1 sm:flex-initial">
-                  <FileSpreadsheet className="w-4 h-4 mr-1 text-emerald-600" />
+                  <FileSpreadsheet className="w-4 h-4 mr-1.5 text-emerald-600" />
                   Excel / CSV
                 </Button>
                 <Button onClick={exportStatementPDF} variant="primary" className="flex-1 sm:flex-initial">
-                  <FileDown className="w-4 h-4 mr-1" />
+                  <FileDown className="w-4 h-4 mr-1.5" />
                   PDF ({activeStatementCurrency})
                 </Button>
               </div>
             </div>
 
             {/* Printable Document Sheet Container */}
-            <div id="financial-statement-doc" className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 sm:p-10 space-y-8">
+            <div id="financial-statement-doc" className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 sm:p-10 space-y-8 font-sans">
               
-              {/* Clean Letterhead Banner */}
+              {/* Clean Letterhead Banner (Exact natural aspect ratio, no squishing) */}
               {companySettings?.letterhead_url ? (
                 <div className="-mx-6 sm:-mx-10 -mt-6 sm:-mt-10 mb-6 overflow-hidden rounded-t-xl" id="letterhead-container">
                   <img
@@ -1265,21 +1270,21 @@ export default function Reports() {
                   />
                 </div>
               ) : (
-                <div className="border-b-2 border-black pb-4 flex justify-between items-start">
+                <div className="border-b border-gray-900 pb-4 flex justify-between items-start">
                   <div>
                     {companySettings?.logo_url && (
                       <img src={companySettings.logo_url} alt="Logo" className="h-12 object-contain mb-2" />
                     )}
-                    <h2 className="text-2xl font-bold uppercase tracking-wide text-gray-900">
+                    <h2 className="text-xl font-bold uppercase tracking-wider text-gray-900">
                       {companySettings?.company_name || 'KILIMANJARO AUDIO VISUAL SERVICE'}
                     </h2>
-                    <p className="text-xs text-gray-500">
+                    <p className="text-xs text-gray-500 mt-1">
                       {[companySettings?.address_line1, companySettings?.city, companySettings?.phone].filter(Boolean).join(' • ')}
                     </p>
                   </div>
                   <div className="text-right">
-                    <span className="text-xs font-bold uppercase tracking-wider text-gray-400 block">DOCUMENT</span>
-                    <h1 className="text-xl font-black text-gray-900">SIMPLE FINANCIAL STATEMENT</h1>
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400 block">DOCUMENT</span>
+                    <h1 className="text-lg font-black tracking-tight text-gray-900">SIMPLE FINANCIAL STATEMENT</h1>
                     <p className="text-xs text-gray-600 mt-1 font-mono">{dateFrom} to {dateTo}</p>
                   </div>
                 </div>
@@ -1287,40 +1292,40 @@ export default function Reports() {
 
               {/* 1. Profit and Loss Statement */}
               <div className="statement-section-break">
-                <div className="border-b-2 border-black pb-2 mb-4 flex justify-between items-center">
-                  <h3 className="text-base font-bold uppercase tracking-wider text-gray-900">
+                <div className="border-b border-gray-900 pb-2 mb-4 flex justify-between items-center">
+                  <h3 className="text-sm font-bold uppercase tracking-wider text-gray-900">
                     1. Profit & Loss Statement ({activeStatementCurrency})
                   </h3>
-                  <span className="text-xs font-semibold px-2.5 py-1 bg-gray-100 rounded-md text-gray-700">
+                  <span className="text-xs font-semibold px-2.5 py-0.5 bg-gray-100 rounded text-gray-700">
                     Currency: {activeStatementCurrency}
                   </span>
                 </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                   {/* Left Column: Revenue & COGS */}
-                  <div className="border border-gray-200 rounded-lg p-4 space-y-4 text-xs font-mono">
+                  <div className="border border-gray-200 rounded-lg p-4 space-y-4 text-xs font-sans">
                     <div>
-                      <div className="font-bold text-gray-900 uppercase tracking-wide border-b pb-1 font-sans text-xs">Revenue</div>
-                      <div className="mt-2 space-y-1">
-                        <div className="flex justify-between py-1">
+                      <div className="font-bold text-gray-900 uppercase tracking-wider border-b border-gray-200 pb-1.5 text-xs">Revenue</div>
+                      <div className="mt-2 space-y-1.5">
+                        <div className="flex justify-between py-0.5">
                           <span className="text-gray-600">Sale Revenue ({activeStatementCurrency})</span>
-                          <span className="font-semibold text-gray-900">{formatCurrency(currentStatement.totalSalesRevenue, activeStatementCurrency)}</span>
+                          <span className="font-semibold text-gray-900 font-mono">{formatCurrency(currentStatement.totalSalesRevenue, activeStatementCurrency)}</span>
                         </div>
-                        <div className="flex justify-between font-bold border-t pt-1.5 text-emerald-700">
+                        <div className="flex justify-between font-bold border-t border-gray-200 pt-2 text-emerald-700">
                           <span>Total Revenue</span>
-                          <span>{formatCurrency(currentStatement.totalSalesRevenue, activeStatementCurrency)}</span>
+                          <span className="font-mono">{formatCurrency(currentStatement.totalSalesRevenue, activeStatementCurrency)}</span>
                         </div>
                       </div>
                     </div>
 
                     <div>
-                      <div className="font-bold text-gray-900 uppercase tracking-wide border-b pb-1 font-sans text-xs">Cost of Goods Sold (COGS)</div>
-                      <div className="mt-2 space-y-1">
+                      <div className="font-bold text-gray-900 uppercase tracking-wider border-b border-gray-200 pb-1.5 text-xs">Cost of Goods Sold (COGS)</div>
+                      <div className="mt-2 space-y-1.5">
                         {Object.keys(currentStatement.cogsBreakdown).length > 0 ? (
                           Object.entries(currentStatement.cogsBreakdown).map(([cat, amt]) => (
                             <div key={cat} className="flex justify-between py-0.5">
                               <span className="text-gray-600">{cat}</span>
-                              <span className={`font-medium ${amt > 0 ? 'text-gray-900 font-bold' : 'text-gray-400'}`}>
+                              <span className={`font-mono font-medium ${amt > 0 ? 'text-gray-900 font-semibold' : 'text-gray-400'}`}>
                                 {formatCurrency(amt, activeStatementCurrency)}
                               </span>
                             </div>
@@ -1328,29 +1333,29 @@ export default function Reports() {
                         ) : (
                           <div className="text-gray-400 italic py-1">No COGS categories configured.</div>
                         )}
-                        <div className="flex justify-between font-bold border-t pt-1.5 text-red-700">
+                        <div className="flex justify-between font-bold border-t border-gray-200 pt-2 text-red-700">
                           <span>Total COGS</span>
-                          <span>{formatCurrency(currentStatement.totalCOGS, activeStatementCurrency)}</span>
+                          <span className="font-mono">{formatCurrency(currentStatement.totalCOGS, activeStatementCurrency)}</span>
                         </div>
                       </div>
                     </div>
 
-                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex justify-between font-bold text-blue-900 font-sans text-sm">
-                      <span>GROSS PROFIT</span>
-                      <span>{formatCurrency(currentStatement.grossProfit, activeStatementCurrency)}</span>
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 flex justify-between font-bold text-blue-900 text-xs">
+                      <span className="uppercase tracking-wider">GROSS PROFIT</span>
+                      <span className="font-mono">{formatCurrency(currentStatement.grossProfit, activeStatementCurrency)}</span>
                     </div>
                   </div>
 
                   {/* Right Column: Operating & Admin Expenses */}
-                  <div className="border border-gray-200 rounded-lg p-4 space-y-4 text-xs font-mono">
+                  <div className="border border-gray-200 rounded-lg p-4 space-y-4 text-xs font-sans">
                     <div>
-                      <div className="font-bold text-gray-900 uppercase tracking-wide border-b pb-1 font-sans text-xs">Operating Expenses</div>
-                      <div className="mt-2 space-y-1 max-h-40 overflow-y-auto pr-1">
+                      <div className="font-bold text-gray-900 uppercase tracking-wider border-b border-gray-200 pb-1.5 text-xs">Operating Expenses</div>
+                      <div className="mt-2 space-y-1.5">
                         {Object.keys(currentStatement.operatingBreakdown).length > 0 ? (
                           Object.entries(currentStatement.operatingBreakdown).map(([cat, amt]) => (
                             <div key={cat} className="flex justify-between py-0.5">
                               <span className="text-gray-600">{cat}</span>
-                              <span className={`font-medium ${amt > 0 ? 'text-gray-900 font-bold' : 'text-gray-400'}`}>
+                              <span className={`font-mono font-medium ${amt > 0 ? 'text-gray-900 font-semibold' : 'text-gray-400'}`}>
                                 {formatCurrency(amt, activeStatementCurrency)}
                               </span>
                             </div>
@@ -1359,20 +1364,20 @@ export default function Reports() {
                           <div className="text-gray-400 italic py-1">No operating categories configured.</div>
                         )}
                       </div>
-                      <div className="flex justify-between font-bold border-t pt-1.5 text-gray-900 mt-1">
+                      <div className="flex justify-between font-bold border-t border-gray-200 pt-2 text-gray-900 mt-1">
                         <span>Total Operating Expenses</span>
-                        <span>{formatCurrency(currentStatement.totalOperating, activeStatementCurrency)}</span>
+                        <span className="font-mono">{formatCurrency(currentStatement.totalOperating, activeStatementCurrency)}</span>
                       </div>
                     </div>
 
                     <div>
-                      <div className="font-bold text-gray-900 uppercase tracking-wide border-b pb-1 font-sans text-xs">Administrative & Tax Expenses</div>
-                      <div className="mt-2 space-y-1 max-h-36 overflow-y-auto pr-1">
+                      <div className="font-bold text-gray-900 uppercase tracking-wider border-b border-gray-200 pb-1.5 text-xs">Administrative & Tax Expenses</div>
+                      <div className="mt-2 space-y-1.5">
                         {Object.keys(currentStatement.adminBreakdown).length > 0 ? (
                           Object.entries(currentStatement.adminBreakdown).map(([cat, amt]) => (
                             <div key={cat} className="flex justify-between py-0.5">
                               <span className="text-gray-600">{cat}</span>
-                              <span className={`font-medium ${amt > 0 ? 'text-gray-900 font-bold' : 'text-gray-400'}`}>
+                              <span className={`font-mono font-medium ${amt > 0 ? 'text-gray-900 font-semibold' : 'text-gray-400'}`}>
                                 {formatCurrency(amt, activeStatementCurrency)}
                               </span>
                             </div>
@@ -1381,15 +1386,17 @@ export default function Reports() {
                           <div className="text-gray-400 italic py-1">No admin categories configured.</div>
                         )}
                       </div>
-                      <div className="flex justify-between font-bold border-t pt-1.5 text-gray-900 mt-1">
+                      <div className="flex justify-between font-bold border-t border-gray-200 pt-2 text-gray-900 mt-1">
                         <span>Total Admin Expenses</span>
-                        <span>{formatCurrency(currentStatement.totalAdmin, activeStatementCurrency)}</span>
+                        <span className="font-mono">{formatCurrency(currentStatement.totalAdmin, activeStatementCurrency)}</span>
                       </div>
                     </div>
 
-                    <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 flex justify-between font-bold text-emerald-900 font-sans text-sm">
-                      <span>PROFIT BEFORE TAX</span>
-                      <span>{formatCurrency(currentStatement.profitBeforeTax, activeStatementCurrency)}</span>
+                    <div className={`border rounded-lg p-3 flex justify-between font-bold text-xs ${
+                      currentStatement.profitBeforeTax >= 0 ? 'bg-emerald-50 border-emerald-200 text-emerald-900' : 'bg-red-50 border-red-200 text-red-900'
+                    }`}>
+                      <span className="uppercase tracking-wider">PROFIT BEFORE TAX</span>
+                      <span className="font-mono">{formatCurrency(currentStatement.profitBeforeTax, activeStatementCurrency)}</span>
                     </div>
                   </div>
                 </div>
@@ -1397,45 +1404,45 @@ export default function Reports() {
 
               {/* 2. Invoices Main Ledger Table */}
               <div className="statement-section-break">
-                <div className="border-b-2 border-black pb-2 mb-4 flex justify-between items-center">
-                  <h3 className="text-base font-bold uppercase tracking-wider text-gray-900">
+                <div className="border-b border-gray-900 pb-2 mb-4 flex justify-between items-center">
+                  <h3 className="text-sm font-bold uppercase tracking-wider text-gray-900">
                     2. Invoices Main (Monthly Invoice Ledger)
                   </h3>
-                  <span className="text-xs text-gray-500">{documentData.length} invoices recorded</span>
+                  <span className="text-xs text-gray-500 font-sans">{documentData.length} invoices recorded</span>
                 </div>
 
-                <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y divide-gray-200 text-xs">
-                    <thead className="bg-gray-100">
-                      <tr className="font-bold text-gray-700">
-                        <th className="px-2.5 py-2 text-left">Invoice Date</th>
-                        <th className="px-2.5 py-2 text-left">Curr</th>
-                        <th className="px-2.5 py-2 text-left">Company/Client</th>
-                        <th className="px-2.5 py-2 text-left">Project/Events</th>
-                        <th className="px-2.5 py-2 text-left">Location</th>
-                        <th className="px-2.5 py-2 text-left">Invoice #</th>
-                        <th className="px-2.5 py-2 text-right">VAT</th>
-                        <th className="px-2.5 py-2 text-right">Total Amount</th>
-                        <th className="px-2.5 py-2 text-right">Paid</th>
-                        <th className="px-2.5 py-2 text-right">Balance</th>
-                        <th className="px-2.5 py-2 text-center">Status</th>
+                <div className="w-full">
+                  <table className="w-full text-[11px] font-sans border border-gray-200 divide-y divide-gray-200">
+                    <thead className="bg-gray-50 font-semibold text-gray-700">
+                      <tr>
+                        <th className="px-2 py-2 text-left">Invoice Date</th>
+                        <th className="px-1.5 py-2 text-left">Curr</th>
+                        <th className="px-2 py-2 text-left">Company/Client</th>
+                        <th className="px-2 py-2 text-left">Project/Events</th>
+                        <th className="px-2 py-2 text-left">Location</th>
+                        <th className="px-2 py-2 text-left">Invoice #</th>
+                        <th className="px-1.5 py-2 text-right">VAT</th>
+                        <th className="px-2 py-2 text-right">Total Amount</th>
+                        <th className="px-2 py-2 text-right">Paid</th>
+                        <th className="px-2 py-2 text-right">Balance</th>
+                        <th className="px-1.5 py-2 text-center">Status</th>
                       </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-100">
                       {documentData.map((item) => (
                         <tr key={item.document_id} className="hover:bg-gray-50">
-                          <td className="px-2.5 py-2 whitespace-nowrap text-gray-900 font-mono">{formatDate(item.issue_date)}</td>
-                          <td className="px-2.5 py-2 font-bold text-gray-500">{item.currency}</td>
-                          <td className="px-2.5 py-2 font-medium text-gray-900">{item.customer_name}</td>
-                          <td className="px-2.5 py-2 text-gray-600">{item.project_events || '—'}</td>
-                          <td className="px-2.5 py-2 text-gray-600">{item.location || '—'}</td>
-                          <td className="px-2.5 py-2 font-medium text-blue-700">{item.document_number}</td>
-                          <td className="px-2.5 py-2 text-right text-gray-500">{(item.tax_percent || 0).toFixed(2)}%</td>
-                          <td className="px-2.5 py-2 text-right font-mono font-medium text-gray-900">{formatCurrency(item.total_amount, item.currency)}</td>
-                          <td className="px-2.5 py-2 text-right font-mono text-emerald-700">{formatCurrency(item.paid || 0, item.currency)}</td>
-                          <td className="px-2.5 py-2 text-right font-mono font-semibold text-amber-700">{formatCurrency(item.balance || 0, item.currency)}</td>
-                          <td className="px-2.5 py-2 text-center">
-                            <span className={`inline-block px-2 py-0.5 text-[10px] font-bold rounded-full ${
+                          <td className="px-2 py-1.5 whitespace-nowrap text-gray-900 font-mono">{formatDate(item.issue_date)}</td>
+                          <td className="px-1.5 py-1.5 font-bold text-gray-500">{item.currency}</td>
+                          <td className="px-2 py-1.5 font-medium text-gray-900">{item.customer_name}</td>
+                          <td className="px-2 py-1.5 text-gray-600">{item.project_events || '—'}</td>
+                          <td className="px-2 py-1.5 text-gray-600">{item.location || '—'}</td>
+                          <td className="px-2 py-1.5 font-medium text-blue-700">{item.document_number}</td>
+                          <td className="px-1.5 py-1.5 text-right text-gray-500 font-mono">{(item.tax_percent || 0).toFixed(2)}%</td>
+                          <td className="px-2 py-1.5 text-right font-mono font-semibold text-gray-900">{formatCurrency(item.total_amount, item.currency)}</td>
+                          <td className="px-2 py-1.5 text-right font-mono text-emerald-700">{formatCurrency(item.paid || 0, item.currency)}</td>
+                          <td className="px-2 py-1.5 text-right font-mono font-semibold text-amber-700">{formatCurrency(item.balance || 0, item.currency)}</td>
+                          <td className="px-1.5 py-1.5 text-center">
+                            <span className={`inline-block px-1.5 py-0.5 text-[9px] font-bold rounded ${
                               item.status === 'paid' ? 'bg-emerald-100 text-emerald-800' :
                               item.status === 'partially_paid' ? 'bg-amber-100 text-amber-800' :
                               'bg-red-100 text-red-800'
@@ -1446,13 +1453,13 @@ export default function Reports() {
                         </tr>
                       ))}
                     </tbody>
-                    <tfoot className="bg-gray-100 font-bold border-t-2 border-gray-400">
+                    <tfoot className="bg-gray-50 font-bold border-t border-gray-300">
                       {Object.entries(invoiceTotalsByCurrency).map(([curr, totals]) => (
                         <tr key={curr}>
-                          <td colSpan={7} className="px-2.5 py-2 text-right uppercase text-gray-700">Total ({curr}):</td>
-                          <td className="px-2.5 py-2 text-right font-mono text-gray-900">{formatCurrency(totals.total, curr)}</td>
-                          <td className="px-2.5 py-2 text-right font-mono text-emerald-700">{formatCurrency(totals.paid, curr)}</td>
-                          <td className="px-2.5 py-2 text-right font-mono text-amber-700">{formatCurrency(totals.balance, curr)}</td>
+                          <td colSpan={7} className="px-2 py-2 text-right uppercase text-gray-700 text-xs">Total ({curr}):</td>
+                          <td className="px-2 py-2 text-right font-mono text-gray-900">{formatCurrency(totals.total, curr)}</td>
+                          <td className="px-2 py-2 text-right font-mono text-emerald-700">{formatCurrency(totals.paid, curr)}</td>
+                          <td className="px-2 py-2 text-right font-mono text-amber-700">{formatCurrency(totals.balance, curr)}</td>
                           <td></td>
                         </tr>
                       ))}
@@ -1464,17 +1471,17 @@ export default function Reports() {
                 <div className="flex justify-end mt-4">
                   <div className="w-full max-w-sm space-y-3">
                     {Object.entries(invoiceTotalsByCurrency).map(([curr, totals]) => (
-                      <div key={curr} className="bg-[#e2efda] border border-[#a9d18e] rounded-lg p-3 font-mono text-xs text-gray-800 shadow-sm">
-                        <div className="font-bold text-[#375623] mb-1.5 border-b border-[#a9d18e] pb-1 font-sans text-xs uppercase flex justify-between">
+                      <div key={curr} className="bg-[#f2f7f0] border border-[#a9d18e] rounded-lg p-3.5 font-sans text-xs text-gray-800 shadow-sm">
+                        <div className="font-bold text-[#375623] mb-2 border-b border-[#a9d18e] pb-1 uppercase flex justify-between text-xs tracking-wider">
                           <span>{curr} Summary</span>
                           <span>Invoiced</span>
                         </div>
-                        <div className="grid grid-cols-2 gap-y-1.5">
-                          <div className="font-bold text-[#375623]">Total sales:</div>
+                        <div className="grid grid-cols-2 gap-y-1.5 font-mono">
+                          <div className="font-bold text-[#375623] font-sans">Total sales:</div>
                           <div className="text-right font-bold text-[#375623]">{formatCurrency(totals.total, curr)}</div>
-                          <div className="font-bold text-[#375623]">Paid:</div>
+                          <div className="font-bold text-[#375623] font-sans">Paid:</div>
                           <div className="text-right font-bold text-[#375623]">{formatCurrency(totals.paid, curr)}</div>
-                          <div className="font-bold text-[#375623]">Unpaid:</div>
+                          <div className="font-bold text-[#375623] font-sans">Unpaid:</div>
                           <div className="text-right font-bold text-[#375623]">{formatCurrency(totals.balance, curr)}</div>
                         </div>
                       </div>
@@ -1485,11 +1492,11 @@ export default function Reports() {
 
               {/* 3. Dynamic Daily Expenses Matrix */}
               <div className="statement-section-break">
-                <div className="border-b-2 border-black pb-2 mb-4 flex justify-between items-center">
-                  <h3 className="text-base font-bold uppercase tracking-wider text-gray-900">
+                <div className="border-b border-gray-900 pb-2 mb-4 flex justify-between items-center">
+                  <h3 className="text-sm font-bold uppercase tracking-wider text-gray-900">
                     3. Daily Expenses Matrix ({activeStatementCurrency})
                   </h3>
-                  <span className="text-xs text-gray-500">Categorized expenses for: {activeStatementCurrency}</span>
+                  <span className="text-xs text-gray-500 font-sans">Categorized expenses for: {activeStatementCurrency}</span>
                 </div>
 
                 {dynamicExpenseMatrix.sortedDates.length === 0 ? (
@@ -1497,26 +1504,26 @@ export default function Reports() {
                     No expense records found for {activeStatementCurrency} in this period.
                   </div>
                 ) : (
-                  <div className="overflow-x-auto max-h-[450px]">
-                    <table className="min-w-full divide-y divide-gray-200 text-[11px] font-mono">
-                      <thead className="bg-gray-100 sticky top-0 z-10">
+                  <div className="w-full">
+                    <table className="w-full text-[10px] font-sans border border-gray-200 divide-y divide-gray-200">
+                      <thead className="bg-gray-50 font-semibold text-gray-700">
                         <tr>
-                          <th className="px-2 py-2 text-left font-bold text-gray-800 bg-gray-200 sticky left-0 z-20 font-sans">DATE</th>
+                          <th className="px-2 py-2 text-left bg-gray-100 uppercase tracking-wider">DATE</th>
                           {dynamicExpenseMatrix.activeCategories.map(cat => (
-                            <th key={cat} className="px-2 py-2 text-right font-semibold text-gray-700 whitespace-nowrap">{cat}</th>
+                            <th key={cat} className="px-1.5 py-2 text-right whitespace-nowrap">{cat}</th>
                           ))}
-                          <th className="px-2 py-2 text-right font-bold text-gray-900 bg-gray-200 font-sans">TOTAL</th>
+                          <th className="px-2 py-2 text-right bg-gray-100 uppercase tracking-wider font-bold text-gray-900">TOTAL</th>
                         </tr>
                       </thead>
-                      <tbody className="bg-white divide-y divide-gray-100">
+                      <tbody className="bg-white divide-y divide-gray-100 font-mono">
                         {dynamicExpenseMatrix.sortedDates.map(dateStr => {
                           const dayMap = dynamicExpenseMatrix.datesMap[dateStr] || {};
                           const dayTotal = Object.values(dayMap).reduce((a, b) => a + b, 0);
                           return (
                             <tr key={dateStr} className="hover:bg-gray-50">
-                              <td className="px-2 py-1.5 font-sans font-medium text-gray-900 whitespace-nowrap bg-gray-50 sticky left-0 z-10">{dateStr}</td>
+                              <td className="px-2 py-1.5 font-sans font-medium text-gray-900 whitespace-nowrap bg-gray-50">{dateStr}</td>
                               {dynamicExpenseMatrix.activeCategories.map(cat => (
-                                <td key={cat} className="px-2 py-1.5 text-right text-gray-700 whitespace-nowrap">
+                                <td key={cat} className="px-1.5 py-1.5 text-right text-gray-700 whitespace-nowrap">
                                   {dayMap[cat] ? formatCurrency(dayMap[cat], activeStatementCurrency) : '—'}
                                 </td>
                               ))}
@@ -1527,15 +1534,15 @@ export default function Reports() {
                           );
                         })}
                       </tbody>
-                      <tfoot className="bg-gray-200 font-bold border-t-2 border-gray-400 sticky bottom-0 z-10">
+                      <tfoot className="bg-gray-100 font-bold border-t border-gray-300 font-mono">
                         <tr>
-                          <td className="px-2 py-2 text-gray-900 font-sans sticky left-0 z-20 bg-gray-200">TOTAL</td>
+                          <td className="px-2 py-2 text-gray-900 font-sans uppercase">TOTAL</td>
                           {dynamicExpenseMatrix.activeCategories.map(cat => (
-                            <td key={cat} className="px-2 py-2 text-right whitespace-nowrap">
+                            <td key={cat} className="px-1.5 py-2 text-right whitespace-nowrap">
                               {dynamicExpenseMatrix.categoryTotals[cat] ? formatCurrency(dynamicExpenseMatrix.categoryTotals[cat], activeStatementCurrency) : '—'}
                             </td>
                           ))}
-                          <td className="px-2 py-2 text-right text-red-800 bg-gray-300 whitespace-nowrap">
+                          <td className="px-2 py-2 text-right text-red-800 bg-gray-200 whitespace-nowrap">
                             {formatCurrency(dynamicExpenseMatrix.grandTotal, activeStatementCurrency)}
                           </td>
                         </tr>
