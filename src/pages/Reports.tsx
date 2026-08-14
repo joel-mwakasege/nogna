@@ -1006,7 +1006,7 @@ export default function Reports() {
 
     try {
       const opt = {
-        margin:,
+        margin: 5,
         filename: 'Financial_Statement_' + activeStatementCurrency + '_' + dateFrom + '_to_' + dateTo + '.pdf',
         image: { type: 'jpeg', quality: 0.98 },
         html2canvas: { 
