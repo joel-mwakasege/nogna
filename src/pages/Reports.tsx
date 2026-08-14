@@ -370,6 +370,22 @@ export default function Reports() {
     }
   };
 
+  const convertUrlToBase64 = async (url: string): Promise<string | null> => {
+    try {
+      const response = await fetch(url, { mode: 'cors' });
+      if (!response.ok) return null;
+      const blob = await response.blob();
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.onerror = () => resolve(null);
+        reader.readAsDataURL(blob);
+      });
+    } catch {
+      return null;
+    }
+  };
+
   const fetchCompanySettings = async () => {
     if (!companyId) return;
     const { data, error } = await supabase
@@ -379,11 +395,24 @@ export default function Reports() {
       .maybeSingle();
 
     if (!error && data) {
+      let letterhead = data.letterhead_url || data.invoice_letterhead_url || data.header_url || null;
+      let logo = data.logo_url || null;
+
+      // Pre-convert images to base64 for seamless, zero-CORS PDF export
+      if (letterhead && letterhead.startsWith('http')) {
+        const base64Letterhead = await convertUrlToBase64(letterhead);
+        if (base64Letterhead) letterhead = base64Letterhead;
+      }
+      if (logo && logo.startsWith('http')) {
+        const base64Logo = await convertUrlToBase64(logo);
+        if (base64Logo) logo = base64Logo;
+      }
+
       setCompanySettings({
         ...data,
         company_name: data.company_name || data.name || '',
-        logo_url: data.logo_url || null,
-        letterhead_url: data.letterhead_url || data.invoice_letterhead_url || data.header_url || null,
+        logo_url: logo,
+        letterhead_url: letterhead,
         address_line1: data.address_line1 || data.address || '',
         address_line2: data.address_line2 || '',
         city: data.city || '',
@@ -1002,29 +1031,52 @@ export default function Reports() {
 
   const exportStatementPDF = async () => {
     const element = document.getElementById('financial-statement-doc');
-    if (!element) return;
+    if (!element) {
+      alert('Error: Statement element "#financial-statement-doc" not found on page.');
+      return;
+    }
+
+    const filename = 'Financial_Statement_' + (activeStatementCurrency || 'Report') + '_' + dateFrom + '_to_' + dateTo + '.pdf';
 
     try {
+      let html2pdfFn: any = html2pdf;
+      if (typeof html2pdfFn !== 'function' && (html2pdf as any)?.default) {
+        html2pdfFn = (html2pdf as any).default;
+      }
+      if (typeof html2pdfFn !== 'function' && (window as any).html2pdf) {
+        html2pdfFn = (window as any).html2pdf;
+      }
+
+      if (typeof html2pdfFn !== 'function') {
+        throw new Error('html2pdf library could not be initialized.');
+      }
+
       const opt = {
         margin: 5,
-        filename: 'Financial_Statement_' + activeStatementCurrency + '_' + dateFrom + '_to_' + dateTo + '.pdf',
+        filename: filename,
         image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: { 
-          scale: 2, 
-          useCORS: true, 
+        html2canvas: {
+          scale: 2,
+          useCORS: true,
           allowTaint: true,
           logging: false,
-          scrollY: 0 
+          scrollY: 0
         },
         jsPDF: { orientation: 'portrait', unit: 'mm', format: 'a4', compress: true },
         pagebreak: { mode: ['avoid-all', 'css', 'legacy'] }
       };
 
-      const html2pdfLib = typeof html2pdf === 'function' ? html2pdf : (window as any).html2pdf || (html2pdf as any).default;
-      await html2pdfLib().from(element).set(opt).save();
-    } catch (err) {
-      console.error('PDF export failed:', err);
-      alert('Failed to export PDF. Please try again.');
+      await html2pdfFn().from(element).set(opt).save();
+    } catch (err: any) {
+      console.error('PDF export failed with error details:', err);
+      const detailedMessage = err?.message || (typeof err === 'string' ? err : JSON.stringify(err)) || 'Unknown canvas/PDF rendering error';
+      
+      const shouldPrint = window.confirm(
+        'PDF Export Notice: ' + detailedMessage + '\n\nWould you like to open the browser Print dialog to save it directly as a PDF?'
+      );
+      if (shouldPrint) {
+        window.print();
+      }
     }
   };
 
