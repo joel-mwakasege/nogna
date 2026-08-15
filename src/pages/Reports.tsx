@@ -12,7 +12,7 @@ import {
   ChevronUp,
   PieChart,
   FileSpreadsheet,
-  FileDown,
+  Printer,
   LayoutDashboard,
   Coins,
   Eye,
@@ -22,7 +22,6 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { Button } from '../components/Button';
 import { formatCurrency } from '../lib/currency-utils';
-import html2pdf from 'html2pdf.js';
 
 interface RevenueByPeriod {
   year: number;
@@ -1029,89 +1028,112 @@ export default function Reports() {
     document.body.removeChild(a);
   };
 
-  const exportStatementPDF = async () => {
+  const exportStatementPDF = () => {
     const element = document.getElementById('financial-statement-doc');
     if (!element) {
-      alert('Statement document element not found.');
+      alert('Error: Statement element not found.');
       return;
     }
 
-    const filename = 'Financial_Statement_' + (activeStatementCurrency || 'Report') + '_' + dateFrom + '_to_' + dateTo + '.pdf';
+    // Isolate statement in a clean hidden print frame to eliminate canvas & stylesheet errors
+    const iframe = document.createElement('iframe');
+    iframe.style.position = 'fixed';
+    iframe.style.right = '0';
+    iframe.style.bottom = '0';
+    iframe.style.width = '0';
+    iframe.style.height = '0';
+    iframe.style.border = '0';
+    document.body.appendChild(iframe);
 
-    try {
-      let html2pdfFn: any = html2pdf;
-      if (typeof html2pdfFn !== 'function' && (html2pdf as any)?.default) {
-        html2pdfFn = (html2pdf as any).default;
-      }
-      if (typeof html2pdfFn !== 'function' && (window as any).html2pdf) {
-        html2pdfFn = (window as any).html2pdf;
-      }
+    const doc = iframe.contentWindow?.document;
+    if (!doc) return;
 
-      if (typeof html2pdfFn !== 'function') {
-        throw new Error('html2pdf library is unavailable.');
-      }
+    const fontFamily = companySettings?.font_family && companySettings.font_family !== 'inherit'
+      ? companySettings.font_family
+      : '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
 
-      const opt = {
-        margin: 5,
-        filename: filename,
-        image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: {
-          scale: 2,
-          useCORS: true,
-          allowTaint: true,
-          logging: false,
-          scrollY: 0,
-          onclone: (clonedDoc: Document) => {
-            const docEl = clonedDoc.getElementById('financial-statement-doc');
-            if (docEl) {
-              docEl.style.boxShadow = 'none';
-              docEl.style.border = 'none';
-              docEl.style.borderRadius = '0';
-              docEl.style.padding = '0';
-              docEl.style.margin = '0';
-              docEl.style.width = '100%';
-
-              // Replace any modern CSS color functions across all elements in the cloned tree
-              const elements = docEl.querySelectorAll('*');
-              elements.forEach((node) => {
-                const el = node as HTMLElement;
-                if (!el.style) return;
-                el.style.boxShadow = 'none';
-                el.style.textShadow = 'none';
-
-                try {
-                  const comp = window.getComputedStyle(el);
-                  if (comp.color && (comp.color.includes('color(') || comp.color.includes('oklch') || comp.color.includes('color-mix'))) {
-                    el.style.color = '#111827';
-                  }
-                  if (comp.backgroundColor && (comp.backgroundColor.includes('color(') || comp.backgroundColor.includes('oklch') || comp.backgroundColor.includes('color-mix'))) {
-                    el.style.backgroundColor = '#ffffff';
-                  }
-                  if (comp.borderColor && (comp.borderColor.includes('color(') || comp.borderColor.includes('oklch') || comp.borderColor.includes('color-mix'))) {
-                    el.style.borderColor = '#e5e7eb';
-                  }
-                } catch {
-                  // Ignore
-                }
-              });
+    const printHtml = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Financial Statement - ${activeStatementCurrency || 'Report'}</title>
+          <style>
+            @page {
+              size: A4 portrait;
+              margin: 8mm;
             }
-          }
-        },
-        jsPDF: { orientation: 'portrait', unit: 'mm', format: 'a4', compress: true },
-        pagebreak: { mode: 'css' }
-      };
+            * {
+              box-sizing: border-box;
+              -webkit-print-color-adjust: exact !important;
+              print-color-adjust: exact !important;
+            }
+            body {
+              font-family: ${fontFamily};
+              color: #111827;
+              background: #ffffff;
+              margin: 0;
+              padding: 0;
+              font-size: 11px;
+              line-height: 1.4;
+            }
+            #letterhead-container {
+              width: 100%;
+              margin: 0 0 15px 0;
+              padding: 0;
+            }
+            #letterhead-image {
+              width: 100%;
+              height: auto;
+              display: block;
+            }
+            .statement-section-break {
+              margin-bottom: 20px;
+              page-break-inside: avoid;
+            }
+            table {
+              width: 100%;
+              border-collapse: collapse;
+              font-size: 10px;
+            }
+            th {
+              background-color: #f9fafb;
+              font-weight: 700;
+              text-align: left;
+              padding: 6px 4px;
+              border-bottom: 1px solid #d1d5db;
+              border-top: 1px solid #e5e7eb;
+            }
+            td {
+              padding: 5px 4px;
+              border-bottom: 1px solid #f3f4f6;
+            }
+            tfoot tr td {
+              font-weight: 700;
+              border-top: 1px solid #9ca3af;
+              background-color: #f9fafb;
+              padding: 6px 4px;
+            }
+            .text-right { text-align: right; }
+            .text-center { text-align: center; }
+          </style>
+        </head>
+        <body>
+          ${element.innerHTML}
+        </body>
+      </html>
+    `;
 
-      await html2pdfFn().from(element).set(opt).save();
-    } catch (err: any) {
-      console.error('PDF export error details:', err);
-      const detailedMessage = err?.message || String(err) || 'Rendering error';
-      const proceedPrint = window.confirm(
-        'PDF Export Notice: ' + detailedMessage + '\n\nWould you like to print or save the statement as PDF via the system print dialog?'
-      );
-      if (proceedPrint) {
-        window.print();
-      }
-    }
+    doc.open();
+    doc.write(printHtml);
+    doc.close();
+
+    setTimeout(() => {
+      iframe.contentWindow?.focus();
+      iframe.contentWindow?.print();
+      setTimeout(() => {
+        document.body.removeChild(iframe);
+      }, 2000);
+    }, 400);
   };
 
   const exportInvoicesToCSV = (data: DocumentTotal[]) => {
@@ -1201,40 +1223,6 @@ export default function Reports() {
 
   return (
     <div className="min-h-screen bg-gray-50 py-8 text-gray-900">
-      {/* Dedicated Print Media Stylesheet to guarantee clean single-document printing */}
-      <style>{`
-        @media print {
-          @page {
-            size: A4 portrait;
-            margin: 5mm;
-          }
-          body {
-            background: #ffffff !important;
-          }
-          body * {
-            visibility: hidden !important;
-          }
-          #financial-statement-doc,
-          #financial-statement-doc * {
-            visibility: visible !important;
-          }
-          #financial-statement-doc {
-            position: absolute !important;
-            left: 0 !important;
-            top: 0 !important;
-            width: 100% !important;
-            margin: 0 !important;
-            padding: 0 !important;
-            border: none !important;
-            box-shadow: none !important;
-            background: transparent !important;
-          }
-          .statement-section-break {
-            page-break-inside: avoid !important;
-          }
-        }
-      `}</style>
-
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         
         {/* Top Header */}
@@ -1384,8 +1372,8 @@ export default function Reports() {
                   Excel / CSV
                 </Button>
                 <Button onClick={exportStatementPDF} variant="primary" className="flex-1 sm:flex-initial">
-                  <FileDown className="w-4 h-4 mr-1.5" />
-                  PDF ({activeStatementCurrency})
+                  <Printer className="w-4 h-4 mr-1.5" />
+                  PDF / Print ({activeStatementCurrency})
                 </Button>
               </div>
             </div>
