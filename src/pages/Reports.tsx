@@ -1035,7 +1035,7 @@ export default function Reports() {
       return;
     }
 
-    // Isolate statement in a clean hidden print frame to eliminate canvas & stylesheet errors
+    // Isolate statement in a clean hidden print frame with complete CSS rules
     const iframe = document.createElement('iframe');
     iframe.style.position = 'fixed';
     iframe.style.right = '0';
@@ -1060,7 +1060,7 @@ export default function Reports() {
           <style>
             @page {
               size: A4 portrait;
-              margin: 8mm;
+              margin: 10mm 8mm 10mm 8mm;
             }
             * {
               box-sizing: border-box;
@@ -1078,7 +1078,7 @@ export default function Reports() {
             }
             #letterhead-container {
               width: 100%;
-              margin: 0 0 15px 0;
+              margin: 0 0 16px 0;
               padding: 0;
             }
             #letterhead-image {
@@ -1087,34 +1087,132 @@ export default function Reports() {
               display: block;
             }
             .statement-section-break {
-              margin-bottom: 20px;
+              margin-bottom: 24px;
               page-break-inside: avoid;
             }
+            .grid, .lg\\:grid-cols-2 {
+              display: grid !important;
+              grid-template-columns: 1fr 1fr !important;
+              gap: 16px !important;
+            }
+            .flex {
+              display: flex !important;
+            }
+            .justify-between {
+              justify-content: space-between !important;
+            }
+            .justify-end {
+              justify-content: flex-end !important;
+            }
+            .items-center {
+              align-items: center !important;
+            }
+            .items-start {
+              align-items: flex-start !important;
+            }
+            .w-full { width: 100% !important; }
+            .max-w-sm { max-width: 320px !important; }
+            .border { border: 1px solid #e5e7eb !important; }
+            .border-b { border-bottom: 1px solid #e5e7eb !important; }
+            .border-t { border-top: 1px solid #e5e7eb !important; }
+            .border-gray-200 { border-color: #e5e7eb !important; }
+            .border-gray-300 { border-color: #d1d5db !important; }
+            .border-gray-900 { border-color: #111827 !important; }
+            .border-blue-200 { border-color: #bfdbfe !important; }
+            .border-emerald-200 { border-color: #a7f3d0 !important; }
+            .border-red-200 { border-color: #fecaca !important; }
+            .border-\\[\\#a9d18e\\] { border-color: #a9d18e !important; }
+            .rounded, .rounded-lg { border-radius: 6px !important; }
+            .p-4 { padding: 14px !important; }
+            .p-3 { padding: 10px !important; }
+            .p-3\\.5 { padding: 12px 14px !important; }
+            .pb-1 { padding-bottom: 4px !important; }
+            .pb-1\\.5 { padding-bottom: 6px !important; }
+            .pb-2 { padding-bottom: 8px !important; }
+            .pb-4 { padding-bottom: 12px !important; }
+            .pt-2 { padding-top: 8px !important; }
+            .mt-1 { margin-top: 4px !important; }
+            .mt-2 { margin-top: 8px !important; }
+            .mt-4 { margin-top: 16px !important; }
+            .mb-2 { margin-bottom: 8px !important; }
+            .mb-4 { margin-bottom: 14px !important; }
+            .py-0\\.5 { padding-top: 2px !important; padding-bottom: 2px !important; }
+            .py-1\\.5 { padding-top: 5px !important; padding-bottom: 5px !important; }
+            .py-2 { padding-top: 7px !important; padding-bottom: 7px !important; }
+            .px-1\\.5 { padding-left: 5px !important; padding-right: 5px !important; }
+            .px-2 { padding-left: 7px !important; padding-right: 7px !important; }
+            .px-2\\.5 { padding-left: 9px !important; padding-right: 9px !important; }
+            .bg-white { background-color: #ffffff !important; }
+            .bg-gray-50 { background-color: #f9fafb !important; }
+            .bg-gray-100 { background-color: #f3f4f6 !important; }
+            .bg-blue-50 { background-color: #eff6ff !important; }
+            .bg-emerald-50 { background-color: #ecfdf5 !important; }
+            .bg-emerald-100 { background-color: #d1fae5 !important; }
+            .bg-amber-100 { background-color: #fef3c7 !important; }
+            .bg-red-50 { background-color: #fef2f2 !important; }
+            .bg-red-100 { background-color: #fee2e2 !important; }
+            .bg-\\[\\#f2f7f0\\] { background-color: #f2f7f0 !important; }
+            .text-gray-900 { color: #111827 !important; }
+            .text-gray-700 { color: #374151 !important; }
+            .text-gray-600 { color: #4b5563 !important; }
+            .text-gray-500 { color: #6b7280 !important; }
+            .text-gray-400 { color: #9ca3af !important; }
+            .text-blue-900 { color: #1e3a8a !important; }
+            .text-blue-700 { color: #1d4ed8 !important; }
+            .text-emerald-700 { color: #047857 !important; }
+            .text-emerald-800 { color: #065f46 !important; }
+            .text-amber-700 { color: #b45309 !important; }
+            .text-amber-800 { color: #92400e !important; }
+            .text-red-600, .text-red-700 { color: #b91c1c !important; }
+            .text-red-800, .text-red-900 { color: #7f1d1d !important; }
+            .text-\\[\\#375623\\] { color: #375623 !important; }
+            .font-bold { font-weight: 700 !important; }
+            .font-semibold { font-weight: 600 !important; }
+            .font-medium { font-weight: 500 !important; }
+            .uppercase { text-transform: uppercase !important; }
+            .tracking-wider { letter-spacing: 0.05em !important; }
+            .text-xs { font-size: 11px !important; }
+            .text-sm { font-size: 13px !important; }
+            .text-lg { font-size: 16px !important; }
+            .text-xl { font-size: 18px !important; }
+            .text-right { text-align: right !important; }
+            .text-center { text-align: center !important; }
+            .text-left { text-align: left !important; }
+            .whitespace-nowrap { white-space: nowrap !important; }
+            .space-y-4 > * + * { margin-top: 14px !important; }
+            .space-y-3 > * + * { margin-top: 10px !important; }
+            .space-y-1\\.5 > * + * { margin-top: 5px !important; }
+            .grid-cols-2 {
+              display: grid !important;
+              grid-template-columns: 1fr 1fr !important;
+            }
+            .gap-y-1\\.5 {
+              row-gap: 5px !important;
+            }
             table {
-              width: 100%;
-              border-collapse: collapse;
-              font-size: 10px;
+              width: 100% !important;
+              border-collapse: collapse !important;
+              font-size: 10px !important;
+              margin-top: 6px !important;
             }
             th {
-              background-color: #f9fafb;
-              font-weight: 700;
-              text-align: left;
-              padding: 6px 4px;
-              border-bottom: 1px solid #d1d5db;
-              border-top: 1px solid #e5e7eb;
+              background-color: #f9fafb !important;
+              font-weight: 700 !important;
+              text-align: left !important;
+              padding: 6px 5px !important;
+              border-bottom: 1px solid #d1d5db !important;
+              border-top: 1px solid #e5e7eb !important;
             }
             td {
-              padding: 5px 4px;
-              border-bottom: 1px solid #f3f4f6;
+              padding: 5px 5px !important;
+              border-bottom: 1px solid #f3f4f6 !important;
             }
             tfoot tr td {
-              font-weight: 700;
-              border-top: 1px solid #9ca3af;
-              background-color: #f9fafb;
-              padding: 6px 4px;
+              font-weight: 700 !important;
+              border-top: 1px solid #9ca3af !important;
+              background-color: #f9fafb !important;
+              padding: 7px 5px !important;
             }
-            .text-right { text-align: right; }
-            .text-center { text-align: center; }
           </style>
         </head>
         <body>
@@ -1800,7 +1898,7 @@ export default function Reports() {
                               {visibleColumns.invoiceList.status && <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>}
                             </tr>
                           </thead>
-                          <tbody className="bg-white divide-y divide-gray-200">
+                          <tbody className="bg-white divide-y divide-gray-100">
                             {documentData.map((item) => (
                               <tr key={item.document_id} className="hover:bg-gray-50">
                                 {visibleColumns.invoiceList.invoiceDate && <td className="px-4 py-3 text-sm text-gray-900 whitespace-nowrap">{formatDate(item.issue_date)}</td>}
