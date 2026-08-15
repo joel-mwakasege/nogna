@@ -608,8 +608,21 @@ export default function Reports() {
     }
 
     const { data, error } = await query;
-    if (!error && data) {
-      setOutstandingData(data as any[]);
+    if (!error && data && data.length > 0) {
+      const formatted = (data as any[]).map(d => ({
+        document_id: d.document_id || d.id || '',
+        document_number: d.document_number || d.invoice_number || d.number || d.invoice_no || d.doc_number || d.document_no || '—',
+        customer_name: d.customer_name || d.name || d.client_name || '—',
+        customer_email: d.customer_email || d.email || '',
+        currency: d.currency || 'TZS',
+        issue_date: d.issue_date || d.date || d.created_at || '',
+        status: d.status || 'unpaid',
+        days_outstanding: Number(d.days_outstanding ?? d.days_overdue ?? (d.issue_date ? Math.max(0, Math.floor((new Date().getTime() - new Date(d.issue_date).getTime()) / (1000 * 60 * 60 * 24))) : 0)),
+        amount_due: Number(d.amount_due ?? d.total_amount ?? d.total ?? 0),
+        amount_paid: Number(d.amount_paid ?? d.paid ?? d.paid_amount ?? 0),
+        balance_due: Number(d.balance_due ?? d.balance ?? d.outstanding_amount ?? (Number(d.total_amount || 0) - Number(d.paid || 0)))
+      }));
+      setOutstandingData(formatted);
     }
   };
 
@@ -2030,7 +2043,7 @@ export default function Reports() {
                           <tbody className="bg-white divide-y divide-gray-200">
                             {outstandingData.map((item) => (
                               <tr key={item.document_id} className="hover:bg-gray-50">
-                                <td className="px-3 py-2 font-medium text-blue-600">{item.document_number}</td>
+                                <td className="px-3 py-2 font-medium text-blue-600">{(item as any).document_number || (item as any).invoice_number || (item as any).number || (item as any).invoice_no || '—'}</td>
                                 <td className="px-3 py-2 font-medium text-gray-900">{item.customer_name}</td>
                                 <td className="px-3 py-2 font-bold text-gray-500">{item.currency}</td>
                                 <td className="px-3 py-2 text-gray-600">{formatDate(item.issue_date)}</td>
