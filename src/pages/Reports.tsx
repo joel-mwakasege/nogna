@@ -13,10 +13,12 @@ import {
   PieChart,
   FileSpreadsheet,
   Printer,
+  Download,
   LayoutDashboard,
   Coins,
   Eye,
-  EyeOff
+  EyeOff,
+  AlertCircle
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
@@ -295,9 +297,14 @@ export default function Reports() {
   const [activeStatementCurrency, setActiveStatementCurrency] = useState<string>('');
   const [hideZeroItems, setHideZeroItems] = useState<boolean>(true);
 
+  // Expand all sections by default in Overview Tab
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     profitloss: true,
+    revenue: true,
+    customers: true,
+    outstanding: true,
     documents: true,
+    paymentsLog: true,
   });
 
   const [visibleSections, setVisibleSections] = useState<VisibleSections>(() => {
@@ -1328,7 +1335,7 @@ export default function Reports() {
           <div>
             <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 tracking-tight">Financial Reports</h1>
             <p className="text-xs sm:text-sm text-gray-500 mt-1">
-              Monthly financial statements, invoice ledgers, and revenue overviews.
+              Monthly financial statements, invoice ledgers, and detailed report overviews.
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -1730,7 +1737,7 @@ export default function Reports() {
           </div>
         ) : (
           /* ========================================================================= */
-          /* TAB 2: ORIGINAL STANDARD OVERVIEW & DETAILED REPORTS                      */
+          /* TAB 2: OVERVIEW & DETAILED REPORTS (ALL 6 REPORTS FULLY POPULATED)        */
           /* ========================================================================= */
           <div className="space-y-6">
             
@@ -1742,7 +1749,7 @@ export default function Reports() {
               >
                 <div className="flex items-center gap-2">
                   <PieChart className="w-5 h-5 text-slate-600" />
-                  <h3 className="font-semibold text-gray-900">Report Customization & Columns Picker</h3>
+                  <h3 className="font-semibold text-gray-900">Report Customization & Sections Picker</h3>
                 </div>
                 <div className="flex items-center gap-2 text-sm text-gray-500">
                   <span>{showConfigPanel ? 'Collapse Options' : 'Expand Options'}</span>
@@ -1788,7 +1795,8 @@ export default function Reports() {
 
             {/* Standard Collapsible Sections */}
             <div className="space-y-6">
-              {/* Profit & Loss Overview */}
+              
+              {/* 1. Profit & Loss Overview */}
               {visibleSections.profitLoss && (
                 <div className="bg-white rounded-lg shadow">
                   <div
@@ -1798,7 +1806,7 @@ export default function Reports() {
                   >
                     <div className="flex items-center gap-3">
                       <PieChart className="w-6 h-6 text-slate-700" />
-                      <h2 className="text-xl font-semibold text-gray-900">Profit & Loss Statement</h2>
+                      <h2 className="text-xl font-semibold text-gray-900">Profit & Loss Statement (Periods)</h2>
                     </div>
                     <div className="flex items-center gap-3">
                       <Button
@@ -1809,7 +1817,7 @@ export default function Reports() {
                           exportToCSV(profitLossData, 'profit-and-loss');
                         }}
                       >
-                        <Download className="w-4 h-4" />
+                        <Download className="w-4 h-4 mr-1" />
                         Export
                       </Button>
                       {expandedSections['profitloss'] ? <ChevronUp className="w-5 h-5 text-gray-400" /> : <ChevronDown className="w-5 h-5 text-gray-400" />}
@@ -1835,7 +1843,7 @@ export default function Reports() {
                                 <td className="px-4 py-3 text-sm text-gray-900">
                                   {new Date(item.year, item.month - 1).toLocaleDateString('en-US', { year: 'numeric', month: 'long' })}
                                 </td>
-                                <td className="px-4 py-3 text-sm text-gray-600">{item.currency}</td>
+                                <td className="px-4 py-3 text-sm text-gray-600 font-bold">{item.currency}</td>
                                 <td className="px-4 py-3 text-sm text-right text-emerald-600 font-semibold">{formatCurrency(Number(item.total_revenue), item.currency)}</td>
                                 <td className="px-4 py-3 text-sm text-right text-red-600 font-semibold">{formatCurrency(Number(item.total_expenses), item.currency)}</td>
                                 <td className={`px-4 py-3 text-sm text-right font-bold ${Number(item.net_profit) >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
@@ -1851,7 +1859,196 @@ export default function Reports() {
                 </div>
               )}
 
-              {/* Monthly Invoice Report */}
+              {/* 2. Revenue by Period */}
+              {visibleSections.revenueByPeriod && (
+                <div className="bg-white rounded-lg shadow">
+                  <div
+                    role="button"
+                    onClick={() => toggleSection('revenue')}
+                    className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 cursor-pointer select-none"
+                  >
+                    <div className="flex items-center gap-3">
+                      <TrendingUp className="w-6 h-6 text-blue-600" />
+                      <h2 className="text-xl font-semibold text-gray-900">Revenue by Period</h2>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          exportToCSV(revenueData, 'revenue-by-period');
+                        }}
+                      >
+                        <Download className="w-4 h-4 mr-1" />
+                        Export
+                      </Button>
+                      {expandedSections['revenue'] ? <ChevronUp className="w-5 h-5 text-gray-400" /> : <ChevronDown className="w-5 h-5 text-gray-400" />}
+                    </div>
+                  </div>
+
+                  {expandedSections['revenue'] && (
+                    <div className="px-6 pb-6">
+                      <div className="overflow-x-auto">
+                        <table className="min-w-full divide-y divide-gray-200">
+                          <thead className="bg-gray-50">
+                            <tr>
+                              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Period</th>
+                              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Currency</th>
+                              <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Invoices Count</th>
+                              <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Total Revenue</th>
+                            </tr>
+                          </thead>
+                          <tbody className="bg-white divide-y divide-gray-200">
+                            {revenueData.map((item, idx) => (
+                              <tr key={idx} className="hover:bg-gray-50">
+                                <td className="px-4 py-3 text-sm text-gray-900">
+                                  {new Date(item.year, item.month - 1).toLocaleDateString('en-US', { year: 'numeric', month: 'long' })}
+                                </td>
+                                <td className="px-4 py-3 text-sm font-bold text-gray-500">{item.currency}</td>
+                                <td className="px-4 py-3 text-sm text-right text-gray-700">{item.document_count}</td>
+                                <td className="px-4 py-3 text-sm text-right font-bold text-emerald-600">{formatCurrency(Number(item.total_revenue), item.currency)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* 3. Customer Revenue */}
+              {visibleSections.customerRevenue && (
+                <div className="bg-white rounded-lg shadow">
+                  <div
+                    role="button"
+                    onClick={() => toggleSection('customers')}
+                    className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 cursor-pointer select-none"
+                  >
+                    <div className="flex items-center gap-3">
+                      <Users className="w-6 h-6 text-purple-600" />
+                      <h2 className="text-xl font-semibold text-gray-900">Customer Revenue Breakdown</h2>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          exportToCSV(customerData, 'customer-revenue');
+                        }}
+                      >
+                        <Download className="w-4 h-4 mr-1" />
+                        Export
+                      </Button>
+                      {expandedSections['customers'] ? <ChevronUp className="w-5 h-5 text-gray-400" /> : <ChevronDown className="w-5 h-5 text-gray-400" />}
+                    </div>
+                  </div>
+
+                  {expandedSections['customers'] && (
+                    <div className="px-6 pb-6">
+                      <div className="overflow-x-auto">
+                        <table className="min-w-full divide-y divide-gray-200 text-xs">
+                          <thead className="bg-gray-50">
+                            <tr>
+                              <th className="px-3 py-2.5 text-left font-medium text-gray-500 uppercase">Customer</th>
+                              <th className="px-3 py-2.5 text-left font-medium text-gray-500 uppercase">Email</th>
+                              <th className="px-3 py-2.5 text-left font-medium text-gray-500 uppercase">Curr</th>
+                              <th className="px-3 py-2.5 text-right font-medium text-gray-500 uppercase">Total Invoices</th>
+                              <th className="px-3 py-2.5 text-right font-medium text-gray-500 uppercase">Paid Invoices</th>
+                              <th className="px-3 py-2.5 text-right font-medium text-gray-500 uppercase">Total Paid</th>
+                              <th className="px-3 py-2.5 text-right font-medium text-gray-500 uppercase">Outstanding</th>
+                              <th className="px-3 py-2.5 text-left font-medium text-gray-500 uppercase">Last Invoice</th>
+                            </tr>
+                          </thead>
+                          <tbody className="bg-white divide-y divide-gray-200">
+                            {customerData.map((item) => (
+                              <tr key={`${item.customer_id}-${item.currency}`} className="hover:bg-gray-50">
+                                <td className="px-3 py-2 font-medium text-gray-900">{item.customer_name}</td>
+                                <td className="px-3 py-2 text-gray-500">{item.customer_email || '—'}</td>
+                                <td className="px-3 py-2 font-bold text-gray-500">{item.currency}</td>
+                                <td className="px-3 py-2 text-right text-gray-700">{item.total_invoices}</td>
+                                <td className="px-3 py-2 text-right text-emerald-600 font-semibold">{item.paid_invoices}</td>
+                                <td className="px-3 py-2 text-right text-emerald-700 font-semibold">{formatCurrency(item.total_paid, item.currency || 'TZS')}</td>
+                                <td className="px-3 py-2 text-right text-amber-700 font-semibold">{formatCurrency(item.total_outstanding, item.currency || 'TZS')}</td>
+                                <td className="px-3 py-2 text-gray-600">{item.last_invoice_date ? formatDate(item.last_invoice_date) : '—'}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* 4. Outstanding Invoices */}
+              {visibleSections.outstandingInvoices && (
+                <div className="bg-white rounded-lg shadow">
+                  <div
+                    role="button"
+                    onClick={() => toggleSection('outstanding')}
+                    className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 cursor-pointer select-none"
+                  >
+                    <div className="flex items-center gap-3">
+                      <AlertCircle className="w-6 h-6 text-amber-600" />
+                      <h2 className="text-xl font-semibold text-gray-900">Outstanding Invoices</h2>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          exportToCSV(outstandingData, 'outstanding-invoices');
+                        }}
+                      >
+                        <Download className="w-4 h-4 mr-1" />
+                        Export
+                      </Button>
+                      {expandedSections['outstanding'] ? <ChevronUp className="w-5 h-5 text-gray-400" /> : <ChevronDown className="w-5 h-5 text-gray-400" />}
+                    </div>
+                  </div>
+
+                  {expandedSections['outstanding'] && (
+                    <div className="px-6 pb-6">
+                      <div className="overflow-x-auto">
+                        <table className="min-w-full divide-y divide-gray-200 text-xs">
+                          <thead className="bg-gray-50">
+                            <tr>
+                              <th className="px-3 py-2.5 text-left font-medium text-gray-500 uppercase">Invoice #</th>
+                              <th className="px-3 py-2.5 text-left font-medium text-gray-500 uppercase">Customer</th>
+                              <th className="px-3 py-2.5 text-left font-medium text-gray-500 uppercase">Curr</th>
+                              <th className="px-3 py-2.5 text-left font-medium text-gray-500 uppercase">Issue Date</th>
+                              <th className="px-3 py-2.5 text-right font-medium text-gray-500 uppercase">Days Due</th>
+                              <th className="px-3 py-2.5 text-right font-medium text-gray-500 uppercase">Amount Due</th>
+                              <th className="px-3 py-2.5 text-right font-medium text-gray-500 uppercase">Paid</th>
+                              <th className="px-3 py-2.5 text-right font-medium text-gray-500 uppercase">Balance Due</th>
+                            </tr>
+                          </thead>
+                          <tbody className="bg-white divide-y divide-gray-200">
+                            {outstandingData.map((item) => (
+                              <tr key={item.document_id} className="hover:bg-gray-50">
+                                <td className="px-3 py-2 font-medium text-blue-600">{item.document_number}</td>
+                                <td className="px-3 py-2 font-medium text-gray-900">{item.customer_name}</td>
+                                <td className="px-3 py-2 font-bold text-gray-500">{item.currency}</td>
+                                <td className="px-3 py-2 text-gray-600">{formatDate(item.issue_date)}</td>
+                                <td className="px-3 py-2 text-right text-gray-700">{item.days_outstanding}d</td>
+                                <td className="px-3 py-2 text-right font-medium text-gray-900">{formatCurrency(item.amount_due, item.currency)}</td>
+                                <td className="px-3 py-2 text-right text-emerald-600">{formatCurrency(item.amount_paid, item.currency)}</td>
+                                <td className="px-3 py-2 text-right font-bold text-amber-700">{formatCurrency(item.balance_due, item.currency)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* 5. Monthly Invoice Report */}
               {visibleSections.invoiceList && (
                 <div className="bg-white rounded-lg shadow">
                   <div
@@ -1872,7 +2069,7 @@ export default function Reports() {
                           exportInvoicesToCSV(documentData);
                         }}
                       >
-                        <Download className="w-4 h-4" />
+                        <Download className="w-4 h-4 mr-1" />
                         Export
                       </Button>
                       {expandedSections['documents'] ? <ChevronUp className="w-5 h-5 text-gray-400" /> : <ChevronDown className="w-5 h-5 text-gray-400" />}
@@ -1898,7 +2095,7 @@ export default function Reports() {
                               {visibleColumns.invoiceList.status && <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>}
                             </tr>
                           </thead>
-                          <tbody className="bg-white divide-y divide-gray-100">
+                          <tbody className="bg-white divide-y divide-gray-200">
                             {documentData.map((item) => (
                               <tr key={item.document_id} className="hover:bg-gray-50">
                                 {visibleColumns.invoiceList.invoiceDate && <td className="px-4 py-3 text-sm text-gray-900 whitespace-nowrap">{formatDate(item.issue_date)}</td>}
@@ -1932,7 +2129,7 @@ export default function Reports() {
                 </div>
               )}
 
-              {/* Payments Received Log */}
+              {/* 6. Payments Received Log */}
               {visibleSections.paymentsLog && (
                 <div className="bg-white rounded-lg shadow">
                   <div
@@ -1953,7 +2150,7 @@ export default function Reports() {
                           exportPaymentsToCSV(paymentsLogData);
                         }}
                       >
-                        <Download className="w-4 h-4" />
+                        <Download className="w-4 h-4 mr-1" />
                         Export
                       </Button>
                       {expandedSections['paymentsLog'] ? <ChevronUp className="w-5 h-5 text-gray-400" /> : <ChevronDown className="w-5 h-5 text-gray-400" />}
