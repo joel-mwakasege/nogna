@@ -43,16 +43,21 @@ export function CreateDocument() {
     loadCustomers();
     loadCompanySettings();
     loadCurrencies();
-  }, []);
+  }, [userProfile?.company_id]);
 
   const loadCustomers = async () => {
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from('customers')
         .select('*')
         .is('deleted_at', null)
         .order('name', { ascending: true });
 
+      if (userProfile?.company_id) {
+        query = query.eq('company_id', userProfile.company_id);
+      }
+
+      const { data, error } = await query;
       if (error) throw error;
       setCustomers(data || []);
     } catch (error) {
@@ -62,11 +67,15 @@ export function CreateDocument() {
 
   const loadCompanySettings = async () => {
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from('company_settings')
-        .select('id, document_numbering_mode, document_number_prefix, document_number_counter, default_terms')
-        .maybeSingle();
+        .select('id, document_numbering_mode, document_number_prefix, document_number_counter, default_terms');
 
+      if (userProfile?.company_id) {
+        query = query.eq('company_id', userProfile.company_id);
+      }
+
+      const { data, error } = await query.maybeSingle();
       if (error) throw error;
       setCompanySettings(data);
     } catch (error) {
@@ -84,7 +93,6 @@ export function CreateDocument() {
       if (error) throw error;
       setCurrencies(data || []);
 
-      // Set the first currency as default if available
       if (data && data.length > 0 && !currency) {
         setCurrency(data[0].code);
       }
@@ -118,10 +126,30 @@ export function CreateDocument() {
     setIsLoading(true);
 
     try {
+      const companyId = userProfile?.company_id;
+
+      // Fresh lookup right at submission time to ensure counter and prefix are always present
+      let settingsQuery = supabase
+        .from('company_settings')
+        .select('id, document_numbering_mode, document_number_prefix, document_number_counter, default_terms');
+
+      if (companyId) {
+        settingsQuery = settingsQuery.eq('company_id', companyId);
+      }
+
+      const { data: freshSettings } = await settingsQuery.maybeSingle();
+      const activeSettings = freshSettings || companySettings;
+
       let finalDocumentNumber = documentNumber.trim();
 
-      if (companySettings?.document_numbering_mode === 'auto') {
-        finalDocumentNumber = `${companySettings.document_number_prefix}${companySettings.document_number_counter}`;
+      if (activeSettings?.document_numbering_mode === 'auto') {
+        const prefix = activeSettings.document_number_prefix || 'INV-';
+        const counter = activeSettings.document_number_counter ?? 1;
+        finalDocumentNumber = `${prefix}${counter}`;
+      }
+
+      if (!finalDocumentNumber) {
+        finalDocumentNumber = `INV-${Date.now().toString().slice(-4)}`;
       }
 
       const { data: document, error } = await supabase
@@ -133,19 +161,20 @@ export function CreateDocument() {
           currency,
           issue_date: issueDate,
           status: 'draft',
-          company_id: userProfile?.company_id || null,
-          administrative_notes: companySettings?.default_terms || null,
+          company_id: companyId || null,
+          administrative_notes: activeSettings?.default_terms || null,
         })
         .select()
         .single();
 
       if (error) throw error;
 
-      if (companySettings?.document_numbering_mode === 'auto' && companySettings.id) {
+      // Increment counter in company_settings
+      if (activeSettings?.document_numbering_mode === 'auto' && activeSettings.id) {
         await supabase
           .from('company_settings')
-          .update({ document_number_counter: companySettings.document_number_counter + 1 })
-          .eq('id', companySettings.id);
+          .update({ document_number_counter: (activeSettings.document_number_counter ?? 1) + 1 })
+          .eq('id', activeSettings.id);
       }
 
       navigate(p(`/documents/${document.id}`));
