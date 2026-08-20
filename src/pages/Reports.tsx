@@ -45,6 +45,15 @@ interface ProfitAndLoss {
   expenses_by_category: Array<{ category: string; amount: number }> | null;
 }
 
+interface NetVatPeriod {
+  year: number;
+  month: number;
+  currency: string;
+  total_output_vat: number;
+  total_input_vat: number;
+  net_vat_payable: number;
+}
+
 interface CustomerRevenue {
   customer_id: string;
   customer_name: string;
@@ -164,6 +173,7 @@ interface CurrencyFinancialStatement {
 
 interface VisibleSections {
   profitLoss: boolean;
+  netVat: boolean;
   revenueByPeriod: boolean;
   customerRevenue: boolean;
   outstandingInvoices: boolean;
@@ -223,6 +233,7 @@ const mapStatus = (status: string) => {
 
 const DEFAULT_VISIBLE_SECTIONS: VisibleSections = {
   profitLoss: true,
+  netVat: true,
   revenueByPeriod: true,
   customerRevenue: true,
   outstandingInvoices: true,
@@ -288,6 +299,7 @@ export default function Reports() {
   const [outstandingData, setOutstandingData] = useState<OutstandingInvoice[]>([]);
   const [documentData, setDocumentData] = useState<DocumentTotal[]>([]);
   const [profitLossData, setProfitLossData] = useState<ProfitAndLoss[]>([]);
+  const [netVatData, setNetVatData] = useState<NetVatPeriod[]>([]);
   const [paymentsLogData, setPaymentsLogData] = useState<PaymentLogEntry[]>([]);
   const [categoriesList, setCategoriesList] = useState<ExpenseCategoryItem[]>([]);
   const [expensesData, setExpensesData] = useState<ExpenseRow[]>([]);
@@ -300,6 +312,7 @@ export default function Reports() {
   // Expand all sections by default in Overview Tab
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     profitloss: true,
+    netVat: true,
     revenue: true,
     customers: true,
     outstanding: true,
@@ -366,6 +379,7 @@ export default function Reports() {
         fetchOutstandingData(from, to, currency),
         fetchDocumentData(from, to, currency),
         fetchProfitLossData(from, to, currency),
+        fetchNetVatData(from, to, currency),
         fetchPaymentsLog(from, to, currency),
         fetchExpensesData(from, to)
       ]);
@@ -404,7 +418,6 @@ export default function Reports() {
       let letterhead = data.letterhead_url || data.invoice_letterhead_url || data.header_url || null;
       let logo = data.logo_url || null;
 
-      // Pre-convert images to base64 for seamless, zero-CORS PDF export
       if (letterhead && letterhead.startsWith('http')) {
         const base64Letterhead = await convertUrlToBase64(letterhead);
         if (base64Letterhead) letterhead = base64Letterhead;
@@ -446,7 +459,6 @@ export default function Reports() {
   const fetchExpensesData = async (from = dateFrom, to = dateTo) => {
     if (!companyId) return;
 
-    // 1. Fetch category definitions
     const { data: catData } = await supabase
       .from('expense_categories')
       .select('id, name, classification, color, is_active')
@@ -455,7 +467,6 @@ export default function Reports() {
 
     if (catData) setCategoriesList(catData as ExpenseCategoryItem[]);
 
-    // 2. Fetch expenses using exact database column names
     let query = supabase
       .from('expenses')
       .select('id, expense_date, expense_category_id, payment_category_id, currency_id, amount, description, notes')
@@ -560,7 +571,7 @@ export default function Reports() {
     const grouped: Record<string, CustomerRevenue> = {};
     (invoices as any[]).forEach(inv => {
       const key = `${inv.customer_id}-${inv.currency}`;
-      const totalAmount = Number(inv.total_amount) || 0;
+      const totalAmount = Number(inv.total_amount) || 0; // Keep total for AR calculations
       const paidAmount = paymentsMap[inv.document_id] || 0;
       const outstandingAmount = Math.max(0, totalAmount - paidAmount);
       const isPaid = inv.status === 'paid' || outstandingAmount <= 0;
@@ -612,7 +623,6 @@ export default function Reports() {
     const docNumberMap: Record<string, string> = {};
 
     if (documentIds.length > 0) {
-      // Query raw documents table directly to guarantee exact invoice numbers (manual or auto-generated with settings prefix)
       const { data: rawDocs } = await supabase
         .from('documents')
         .select('id, document_number, invoice_number, number, doc_number, prefix')
@@ -675,7 +685,6 @@ export default function Reports() {
       const docNumberMap: Record<string, string> = {};
 
       if (documentIds.length > 0) {
-        // Query raw documents table directly to guarantee exact invoice numbers (manual or auto-generated with settings prefix)
         const { data: rawDocs } = await supabase
           .from('documents')
           .select('id, document_number, invoice_number, number, doc_number, prefix')
@@ -869,6 +878,39 @@ export default function Reports() {
     }
   };
 
+  const fetchNetVatData = async (from = dateFrom, to = dateTo, currency = selectedCurrency) => {
+    if (!companyId) return;
+    const fromDate = new Date(from);
+    const toDate = new Date(to);
+    const fromYear = fromDate.getFullYear();
+    const fromMonth = fromDate.getMonth() + 1;
+    const toYear = toDate.getFullYear();
+    const toMonth = toDate.getMonth() + 1;
+  
+    let query = supabase
+      .from('net_vat_by_period_view')
+      .select('*')
+      .eq('company_id', companyId)
+      .order('year', { ascending: false })
+      .order('month', { ascending: false });
+  
+    if (currency !== 'all') {
+      query = query.eq('currency', currency);
+    }
+  
+    const { data, error } = await query;
+    if (!error && data) {
+      const filtered = (data as any[]).filter(item => {
+        const itemYear = Number(item.year);
+        const itemMonth = Number(item.month);
+        const afterStart = itemYear > fromYear || (itemYear === fromYear && itemMonth >= fromMonth);
+        const beforeEnd = itemYear < toYear || (itemYear === toYear && itemMonth <= toMonth);
+        return afterStart && beforeEnd;
+      });
+      setNetVatData(filtered);
+    }
+  };
+
   const toggleSection = (section: string) => {
     setExpandedSections(prev => ({
       ...prev,
@@ -940,7 +982,8 @@ export default function Reports() {
         return (cCode || activeCurrenciesInPeriod[0]) === curr;
       });
 
-      const totalSalesRevenue = docsInCurr.reduce((sum, d) => sum + (d.total_amount || 0), 0);
+      // USING SUBTOTAL FOR REVENUE (Excluding Tax)
+      const totalSalesRevenue = docsInCurr.reduce((sum, d) => sum + (d.subtotal || 0), 0);
       const totalCollected = docsInCurr.reduce((sum, d) => sum + (d.paid || 0), 0);
       const totalUnpaid = docsInCurr.reduce((sum, d) => sum + (d.balance || 0), 0);
 
@@ -1033,12 +1076,15 @@ export default function Reports() {
   const invoiceTotalsByCurrency = useMemo(() => {
     return documentData.reduce((acc, doc) => {
       const curr = doc.currency || activeCurrenciesInPeriod[0] || 'TZS';
-      if (!acc[curr]) acc[curr] = { total: 0, paid: 0, balance: 0 };
+      if (!acc[curr]) acc[curr] = { subtotal: 0, total: 0, paid: 0, balance: 0 };
+      
+      // Track subtotal for Revenue, total for AR
+      acc[curr].subtotal += doc.subtotal || 0;
       acc[curr].total += doc.total_amount || 0;
       acc[curr].paid += doc.paid || 0;
       acc[curr].balance += doc.balance || 0;
       return acc;
-    }, {} as Record<string, { total: number; paid: number; balance: number }>);
+    }, {} as Record<string, { subtotal: number; total: number; paid: number; balance: number }>);
   }, [documentData, activeCurrenciesInPeriod]);
 
   const exportFullStatementCSV = () => {
@@ -1054,7 +1100,7 @@ export default function Reports() {
       if (!stat) return;
 
       pushLine(`PROFIT AND LOSS STATEMENT (${curr})`);
-      pushLine('REVENUE');
+      pushLine('REVENUE (Excl. VAT)');
       pushLine('Sale revenue', stat.totalSalesRevenue);
       pushLine('Total Revenue', '', stat.totalSalesRevenue);
       pushLine('');
@@ -1090,8 +1136,8 @@ export default function Reports() {
       pushLine('PROFIT BEFORE TAX', '', stat.profitBeforeTax);
       pushLine('');
 
-      pushLine('SALES SUMMARY', 'Amount');
-      pushLine('Total Sales', stat.totalSalesRevenue);
+      pushLine('ACCOUNTS RECEIVABLE SUMMARY', 'Amount (Incl. VAT)');
+      pushLine('Total Billed', invoiceTotalsByCurrency[curr]?.total || 0);
       pushLine('Paid', stat.totalCollected);
       pushLine('Unpaid', stat.totalUnpaid);
       pushLine('');
@@ -1099,7 +1145,7 @@ export default function Reports() {
     });
 
     pushLine('INVOICES MAIN');
-    pushLine('Invoice date', 'Currency', 'Company/client', 'Project/Events', 'Location', 'Invoice number', 'Tax rate(VAT)', 'Total Amount', 'Paid', 'Balance', 'Status');
+    pushLine('Invoice date', 'Currency', 'Company/client', 'Project/Events', 'Location', 'Invoice number', 'Tax rate(VAT)', 'Total Amount (Incl. VAT)', 'Paid', 'Balance', 'Status');
     documentData.forEach(inv => {
       pushLine(
         formatDate(inv.issue_date),
@@ -1135,7 +1181,6 @@ export default function Reports() {
       return;
     }
 
-    // Isolate statement in a clean hidden print frame with complete CSS rules
     const iframe = document.createElement('iframe');
     iframe.style.position = 'fixed';
     iframe.style.right = '0';
@@ -1158,58 +1203,18 @@ export default function Reports() {
         <head>
           <title>Financial Statement - ${activeStatementCurrency || 'Report'}</title>
           <style>
-            @page {
-              size: A4 portrait;
-              margin: 10mm 8mm 10mm 8mm;
-            }
-            * {
-              box-sizing: border-box;
-              -webkit-print-color-adjust: exact !important;
-              print-color-adjust: exact !important;
-            }
-            body {
-              font-family: ${fontFamily};
-              color: #111827;
-              background: #ffffff;
-              margin: 0;
-              padding: 0;
-              font-size: 11px;
-              line-height: 1.4;
-            }
-            #letterhead-container {
-              width: 100%;
-              margin: 0 0 16px 0;
-              padding: 0;
-            }
-            #letterhead-image {
-              width: 100%;
-              height: auto;
-              display: block;
-            }
-            .statement-section-break {
-              margin-bottom: 24px;
-              page-break-inside: avoid;
-            }
-            .grid, .lg\\:grid-cols-2 {
-              display: grid !important;
-              grid-template-columns: 1fr 1fr !important;
-              gap: 16px !important;
-            }
-            .flex {
-              display: flex !important;
-            }
-            .justify-between {
-              justify-content: space-between !important;
-            }
-            .justify-end {
-              justify-content: flex-end !important;
-            }
-            .items-center {
-              align-items: center !important;
-            }
-            .items-start {
-              align-items: flex-start !important;
-            }
+            @page { size: A4 portrait; margin: 10mm 8mm 10mm 8mm; }
+            * { box-sizing: border-box; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+            body { font-family: ${fontFamily}; color: #111827; background: #ffffff; margin: 0; padding: 0; font-size: 11px; line-height: 1.4; }
+            #letterhead-container { width: 100%; margin: 0 0 16px 0; padding: 0; }
+            #letterhead-image { width: 100%; height: auto; display: block; }
+            .statement-section-break { margin-bottom: 24px; page-break-inside: avoid; }
+            .grid, .lg\\:grid-cols-2 { display: grid !important; grid-template-columns: 1fr 1fr !important; gap: 16px !important; }
+            .flex { display: flex !important; }
+            .justify-between { justify-content: space-between !important; }
+            .justify-end { justify-content: flex-end !important; }
+            .items-center { align-items: center !important; }
+            .items-start { align-items: flex-start !important; }
             .w-full { width: 100% !important; }
             .max-w-sm { max-width: 320px !important; }
             .border { border: 1px solid #e5e7eb !important; }
@@ -1282,37 +1287,12 @@ export default function Reports() {
             .space-y-4 > * + * { margin-top: 14px !important; }
             .space-y-3 > * + * { margin-top: 10px !important; }
             .space-y-1\\.5 > * + * { margin-top: 5px !important; }
-            .grid-cols-2 {
-              display: grid !important;
-              grid-template-columns: 1fr 1fr !important;
-            }
-            .gap-y-1\\.5 {
-              row-gap: 5px !important;
-            }
-            table {
-              width: 100% !important;
-              border-collapse: collapse !important;
-              font-size: 10px !important;
-              margin-top: 6px !important;
-            }
-            th {
-              background-color: #f9fafb !important;
-              font-weight: 700 !important;
-              text-align: left !important;
-              padding: 6px 5px !important;
-              border-bottom: 1px solid #d1d5db !important;
-              border-top: 1px solid #e5e7eb !important;
-            }
-            td {
-              padding: 5px 5px !important;
-              border-bottom: 1px solid #f3f4f6 !important;
-            }
-            tfoot tr td {
-              font-weight: 700 !important;
-              border-top: 1px solid #9ca3af !important;
-              background-color: #f9fafb !important;
-              padding: 7px 5px !important;
-            }
+            .grid-cols-2 { display: grid !important; grid-template-columns: 1fr 1fr !important; }
+            .gap-y-1\\.5 { row-gap: 5px !important; }
+            table { width: 100% !important; border-collapse: collapse !important; font-size: 10px !important; margin-top: 6px !important; }
+            th { background-color: #f9fafb !important; font-weight: 700 !important; text-align: left !important; padding: 6px 5px !important; border-bottom: 1px solid #d1d5db !important; border-top: 1px solid #e5e7eb !important; }
+            td { padding: 5px 5px !important; border-bottom: 1px solid #f3f4f6 !important; }
+            tfoot tr td { font-weight: 700 !important; border-top: 1px solid #9ca3af !important; background-color: #f9fafb !important; padding: 7px 5px !important; }
           </style>
         </head>
         <body>
@@ -1336,7 +1316,7 @@ export default function Reports() {
 
   const exportInvoicesToCSV = (data: DocumentTotal[]) => {
     if (data.length === 0) return;
-    const headers = ['Invoice date', 'Currency', 'Company/client', 'Project/Events', 'Location', 'Invoice number', 'Tax rate(VAT)', 'Total Amount', 'Paid', 'Balance', 'Status'];
+    const headers = ['Invoice date', 'Currency', 'Company/client', 'Project/Events', 'Location', 'Invoice number', 'Tax rate(VAT)', 'Total Amount (Incl. VAT)', 'Paid', 'Balance', 'Status'];
     const rows = data.map(item => [
       formatDate(item.issue_date),
       item.currency,
@@ -1518,9 +1498,7 @@ export default function Reports() {
           </nav>
         </div>
 
-        {/* ========================================================================= */}
-        {/* TAB 1: INVOICE-STYLE MONTHLY FINANCIAL STATEMENT                          */}
-        {/* ========================================================================= */}
+        {/* TAB 1: INVOICE-STYLE MONTHLY FINANCIAL STATEMENT */}
         {activeReportTab === 'statement' ? (
           <div className="space-y-6">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
@@ -1635,7 +1613,7 @@ export default function Reports() {
                   {/* Left Column: Revenue & COGS */}
                   <div className="border border-gray-200 rounded-lg p-4 space-y-4 text-xs">
                     <div>
-                      <div className="font-bold text-gray-900 uppercase tracking-wider border-b border-gray-200 pb-1.5 text-xs">Revenue</div>
+                      <div className="font-bold text-gray-900 uppercase tracking-wider border-b border-gray-200 pb-1.5 text-xs">Revenue (Excl. VAT)</div>
                       <div className="mt-2 space-y-1.5">
                         <div className="flex justify-between py-0.5">
                           <span className="text-gray-600">Sale Revenue ({activeStatementCurrency})</span>
@@ -1755,10 +1733,9 @@ export default function Reports() {
                         <th className="px-1.5 py-2 text-left">Curr</th>
                         <th className="px-2 py-2 text-left">Company/Client</th>
                         <th className="px-2 py-2 text-left">Project/Events</th>
-                        <th className="px-2 py-2 text-left">Location</th>
                         <th className="px-2 py-2 text-left">Invoice #</th>
                         <th className="px-1.5 py-2 text-right">VAT</th>
-                        <th className="px-2 py-2 text-right">Total Amount</th>
+                        <th className="px-2 py-2 text-right">Total Amount (Incl. VAT)</th>
                         <th className="px-2 py-2 text-right">Paid</th>
                         <th className="px-2 py-2 text-right">Balance</th>
                         <th className="px-1.5 py-2 text-center">Status</th>
@@ -1771,7 +1748,6 @@ export default function Reports() {
                           <td className="px-1.5 py-1.5 font-bold text-gray-500">{item.currency}</td>
                           <td className="px-2 py-1.5 font-medium text-gray-900">{item.customer_name}</td>
                           <td className="px-2 py-1.5 text-gray-600">{item.project_events || '—'}</td>
-                          <td className="px-2 py-1.5 text-gray-600">{item.location || '—'}</td>
                           <td className="px-2 py-1.5 font-medium text-blue-700">{item.document_number}</td>
                           <td className="px-1.5 py-1.5 text-right text-gray-500">{(item.tax_percent || 0).toFixed(2)}%</td>
                           <td className="px-2 py-1.5 text-right font-semibold text-gray-900">{formatCurrency(item.total_amount, item.currency)}</td>
@@ -1792,7 +1768,7 @@ export default function Reports() {
                     <tfoot className="bg-gray-50 font-bold border-t border-gray-300">
                       {Object.entries(invoiceTotalsByCurrency).map(([curr, totals]) => (
                         <tr key={curr}>
-                          <td colSpan={7} className="px-2 py-2 text-right uppercase text-gray-700 text-xs">Total ({curr}):</td>
+                          <td colSpan={6} className="px-2 py-2 text-right uppercase text-gray-700 text-xs">Total ({curr}):</td>
                           <td className="px-2 py-2 text-right text-gray-900">{formatCurrency(totals.total, curr)}</td>
                           <td className="px-2 py-2 text-right text-emerald-700">{formatCurrency(totals.paid, curr)}</td>
                           <td className="px-2 py-2 text-right text-amber-700">{formatCurrency(totals.balance, curr)}</td>
@@ -1813,8 +1789,10 @@ export default function Reports() {
                           <span>Invoiced</span>
                         </div>
                         <div className="grid grid-cols-2 gap-y-1.5">
-                          <div className="font-bold text-[#375623]">Total sales:</div>
-                          <div className="text-right font-bold text-[#375623]">{formatCurrency(totals.total, curr)}</div>
+                          <div className="font-bold text-[#375623]">Revenue (Excl. VAT):</div>
+                          <div className="text-right font-bold text-[#375623]">{formatCurrency(totals.subtotal, curr)}</div>
+                          <div className="font-bold text-[#375623] mt-1 pt-1 border-t border-[#a9d18e]/30">Total Billed:</div>
+                          <div className="text-right font-bold text-[#375623] mt-1 pt-1 border-t border-[#a9d18e]/30">{formatCurrency(totals.total, curr)}</div>
                           <div className="font-bold text-[#375623]">Paid:</div>
                           <div className="text-right font-bold text-[#375623]">{formatCurrency(totals.paid, curr)}</div>
                           <div className="font-bold text-[#375623]">Unpaid:</div>
@@ -1829,9 +1807,7 @@ export default function Reports() {
             </div>
           </div>
         ) : (
-          /* ========================================================================= */
-          /* TAB 2: OVERVIEW & DETAILED REPORTS (ALL 6 REPORTS FULLY POPULATED)        */
-          /* ========================================================================= */
+          /* TAB 2: OVERVIEW & DETAILED REPORTS */
           <div className="space-y-6">
             
             {/* Customization configuration picker panel */}
@@ -1857,6 +1833,7 @@ export default function Reports() {
                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-4">
                       {[
                         { key: 'profitLoss', label: 'P&L Statement' },
+                        { key: 'netVat', label: 'Net VAT Summary' },
                         { key: 'revenueByPeriod', label: 'Revenue by Period' },
                         { key: 'customerRevenue', label: 'Customer Revenue' },
                         { key: 'outstandingInvoices', label: 'Outstanding Invoices' },
@@ -1925,7 +1902,7 @@ export default function Reports() {
                             <tr>
                               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Period</th>
                               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Currency</th>
-                              <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Revenue</th>
+                              <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Revenue (Excl. VAT)</th>
                               <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Expenses</th>
                               <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Net Profit</th>
                             </tr>
@@ -1941,6 +1918,69 @@ export default function Reports() {
                                 <td className="px-4 py-3 text-sm text-right text-red-600 font-semibold">{formatCurrency(Number(item.total_expenses), item.currency)}</td>
                                 <td className={`px-4 py-3 text-sm text-right font-bold ${Number(item.net_profit) >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
                                   {formatCurrency(Number(item.net_profit), item.currency)}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Net VAT Summary Section */}
+              {visibleSections.netVat && (
+                <div className="bg-white rounded-lg shadow">
+                  <div
+                    role="button"
+                    onClick={() => toggleSection('netVat')}
+                    className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 cursor-pointer select-none"
+                  >
+                    <div className="flex items-center gap-3">
+                      <DollarSign className="w-6 h-6 text-indigo-600" />
+                      <h2 className="text-xl font-semibold text-gray-900">Net VAT Liability Summary</h2>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          exportToCSV(netVatData, 'net-vat-summary');
+                        }}
+                      >
+                        <Download className="w-4 h-4 mr-1" />
+                        Export
+                      </Button>
+                      {expandedSections['netVat'] ? <ChevronUp className="w-5 h-5 text-gray-400" /> : <ChevronDown className="w-5 h-5 text-gray-400" />}
+                    </div>
+                  </div>
+
+                  {expandedSections['netVat'] && (
+                    <div className="px-6 pb-6">
+                      <div className="overflow-x-auto">
+                        <table className="min-w-full divide-y divide-gray-200">
+                          <thead className="bg-gray-50">
+                            <tr>
+                              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Period</th>
+                              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Curr</th>
+                              <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Output VAT (Collected)</th>
+                              <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Input VAT (Paid)</th>
+                              <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Net Payable / (Refundable)</th>
+                            </tr>
+                          </thead>
+                          <tbody className="bg-white divide-y divide-gray-200">
+                            {netVatData.map((item, idx) => (
+                              <tr key={idx} className="hover:bg-gray-50">
+                                <td className="px-4 py-3 text-sm text-gray-900">
+                                  {new Date(item.year, item.month - 1).toLocaleDateString('en-US', { year: 'numeric', month: 'long' })}
+                                </td>
+                                <td className="px-4 py-3 text-sm text-gray-600 font-bold">{item.currency}</td>
+                                <td className="px-4 py-3 text-sm text-right text-emerald-600 font-semibold">{formatCurrency(Number(item.total_output_vat), item.currency)}</td>
+                                <td className="px-4 py-3 text-sm text-right text-blue-600 font-semibold">{formatCurrency(Number(item.total_input_vat), item.currency)}</td>
+                                <td className={`px-4 py-3 text-sm text-right font-bold ${Number(item.net_vat_payable) >= 0 ? 'text-amber-600' : 'text-emerald-600'}`}>
+                                  {formatCurrency(Number(item.net_vat_payable), item.currency)}
                                 </td>
                               </tr>
                             ))}
@@ -1989,7 +2029,7 @@ export default function Reports() {
                               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Period</th>
                               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Currency</th>
                               <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Invoices Count</th>
-                              <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Total Revenue</th>
+                              <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Total Revenue (Excl. VAT)</th>
                             </tr>
                           </thead>
                           <tbody className="bg-white divide-y divide-gray-200">
@@ -2021,7 +2061,7 @@ export default function Reports() {
                   >
                     <div className="flex items-center gap-3">
                       <Users className="w-6 h-6 text-purple-600" />
-                      <h2 className="text-xl font-semibold text-gray-900">Customer Revenue Breakdown</h2>
+                      <h2 className="text-xl font-semibold text-gray-900">Customer AR Breakdown (Incl. VAT)</h2>
                     </div>
                     <div className="flex items-center gap-3">
                       <Button
@@ -2086,7 +2126,7 @@ export default function Reports() {
                   >
                     <div className="flex items-center gap-3">
                       <AlertCircle className="w-6 h-6 text-amber-600" />
-                      <h2 className="text-xl font-semibold text-gray-900">Outstanding Invoices</h2>
+                      <h2 className="text-xl font-semibold text-gray-900">Outstanding Invoices (Incl. VAT)</h2>
                     </div>
                     <div className="flex items-center gap-3">
                       <Button
@@ -2180,9 +2220,9 @@ export default function Reports() {
                               {visibleColumns.invoiceList.client && <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Company/client</th>}
                               {visibleColumns.invoiceList.project && <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Project/Events</th>}
                               {visibleColumns.invoiceList.location && <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Location</th>}
-                              {visibleColumns.invoiceList.invoiceNumber && <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Invoice number2</th>}
+                              {visibleColumns.invoiceList.invoiceNumber && <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Invoice number</th>}
                               {visibleColumns.invoiceList.taxRate && <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Tax rate(VAT)</th>}
-                              {visibleColumns.invoiceList.totalAmount && <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Total Amount</th>}
+                              {visibleColumns.invoiceList.totalAmount && <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Total (Incl. VAT)</th>}
                               {visibleColumns.invoiceList.paid && <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Paid</th>}
                               {visibleColumns.invoiceList.balance && <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Balance</th>}
                               {visibleColumns.invoiceList.status && <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>}
