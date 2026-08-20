@@ -53,6 +53,40 @@ export function TenantProvider({ children }: { children: React.ReactNode }) {
     loadTenant(slug);
   }, [slug]);
 
+  // NEW: Listen for events from Settings to silently refresh data without a loading screen flash
+  useEffect(() => {
+    const handleSilentRefresh = async () => {
+      if (!slug) return;
+      
+      const { data: companyData } = await supabase
+        .from('companies')
+        .select('id')
+        .eq('slug', slug)
+        .maybeSingle();
+
+      if (!companyData) return;
+
+      const { data: currenciesData } = await supabase
+        .from('currencies')
+        .select('*')
+        .eq('company_id', companyData.id)
+        .eq('is_active', true)
+        .order('display_order', { ascending: true });
+
+      if (currenciesData) {
+        setCurrencies(currenciesData);
+      }
+    };
+
+    window.addEventListener('currencies-updated', handleSilentRefresh);
+    window.addEventListener('company-settings-updated', handleSilentRefresh);
+
+    return () => {
+      window.removeEventListener('currencies-updated', handleSilentRefresh);
+      window.removeEventListener('company-settings-updated', handleSilentRefresh);
+    };
+  }, [slug]);
+
   const loadTenant = async (tenantSlug: string) => {
     setLoading(true);
     setNotFound(false);
