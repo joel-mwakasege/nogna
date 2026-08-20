@@ -4,6 +4,7 @@ import { Button } from '../components/Button';
 import { supabase } from '../lib/supabase';
 import { Database } from '../lib/database.types';
 import { useAuth } from '../contexts/AuthContext';
+import { useCurrencyFormatter } from '../lib/currency-utils'; // Added our new hook!
 
 type Customer = Database['public']['Tables']['customers']['Row'];
 
@@ -15,34 +16,35 @@ interface CompanySettings {
   default_terms: string | null;
 }
 
-interface Currency {
-  id: string;
-  code: string;
-  name: string;
-  symbol: string;
-  display_order: number;
-}
-
 export function CreateDocument() {
   const navigate = useNavigate();
   const { slug } = useParams<{ slug: string }>();
   const p = (path: string) => `/${slug}${path}`;
   const { userProfile } = useAuth();
+  
+  // Bring in the dynamic active currencies from our custom hook
+  const { activeCurrencies } = useCurrencyFormatter();
+
   const [documentType, setDocumentType] = useState<'invoice' | 'quote'>('invoice');
   const [documentNumber, setDocumentNumber] = useState('');
   const [customerId, setCustomerId] = useState('');
   const [currency, setCurrency] = useState<string>('');
   const [issueDate, setIssueDate] = useState(new Date().toISOString().split('T')[0]);
   const [customers, setCustomers] = useState<Customer[]>([]);
-  const [currencies, setCurrencies] = useState<Currency[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [errors, setErrors] = useState<{ documentNumber?: string; customerId?: string }>({});
   const [companySettings, setCompanySettings] = useState<CompanySettings | null>(null);
 
+  // Set the default selected currency when the activeCurrencies load
+  useEffect(() => {
+    if (activeCurrencies && activeCurrencies.length > 0 && !currency) {
+      setCurrency(activeCurrencies[0].code);
+    }
+  }, [activeCurrencies, currency]);
+
   useEffect(() => {
     loadCustomers();
     loadCompanySettings();
-    loadCurrencies();
   }, [userProfile?.company_id]);
 
   const loadCustomers = async () => {
@@ -80,24 +82,6 @@ export function CreateDocument() {
       setCompanySettings(data);
     } catch (error) {
       console.error('Error loading company settings:', error);
-    }
-  };
-
-  const loadCurrencies = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('currencies')
-        .select('*')
-        .order('display_order', { ascending: true });
-
-      if (error) throw error;
-      setCurrencies(data || []);
-
-      if (data && data.length > 0 && !currency) {
-        setCurrency(data[0].code);
-      }
-    } catch (error) {
-      console.error('Error loading currencies:', error);
     }
   };
 
@@ -302,10 +286,10 @@ export function CreateDocument() {
                   onChange={(e) => setCurrency(e.target.value)}
                   className="w-full px-3 sm:px-4 py-2.5 sm:py-3 border border-gray-300 rounded-lg text-sm sm:text-base focus:outline-none focus:ring-2 focus:ring-black focus:border-transparent"
                 >
-                  {currencies.length === 0 ? (
+                  {activeCurrencies.length === 0 ? (
                     <option value="">No currencies available</option>
                   ) : (
-                    currencies.map((curr) => (
+                    activeCurrencies.map((curr) => (
                       <option key={curr.id} value={curr.code}>
                         {curr.code} ({curr.symbol}) - {curr.name}
                       </option>
