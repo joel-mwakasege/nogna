@@ -18,7 +18,8 @@ import {
   Coins,
   Eye,
   EyeOff,
-  AlertCircle
+  AlertCircle,
+  Calculator
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
@@ -135,6 +136,7 @@ interface ExpenseRow {
   payment_category_id: string | null;
   currency_id: string | null;
   amount: number;
+  tax_amount?: number;
   description: string | null;
   notes: string | null;
 }
@@ -174,6 +176,7 @@ interface CurrencyFinancialStatement {
 interface VisibleSections {
   profitLoss: boolean;
   netVat: boolean;
+  vatAudit: boolean;
   revenueByPeriod: boolean;
   customerRevenue: boolean;
   outstandingInvoices: boolean;
@@ -234,6 +237,7 @@ const mapStatus = (status: string) => {
 const DEFAULT_VISIBLE_SECTIONS: VisibleSections = {
   profitLoss: true,
   netVat: true,
+  vatAudit: true,
   revenueByPeriod: true,
   customerRevenue: true,
   outstandingInvoices: true,
@@ -313,6 +317,7 @@ export default function Reports() {
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     profitloss: true,
     netVat: true,
+    vatAudit: true,
     revenue: true,
     customers: true,
     outstanding: true,
@@ -469,7 +474,7 @@ export default function Reports() {
 
     let query = supabase
       .from('expenses')
-      .select('id, expense_date, expense_category_id, payment_category_id, currency_id, amount, description, notes')
+      .select('id, expense_date, expense_category_id, payment_category_id, currency_id, amount, tax_amount, description, notes')
       .eq('company_id', companyId)
       .is('deleted_at', null);
 
@@ -1076,15 +1081,16 @@ export default function Reports() {
   const invoiceTotalsByCurrency = useMemo(() => {
     return documentData.reduce((acc, doc) => {
       const curr = doc.currency || activeCurrenciesInPeriod[0] || 'TZS';
-      if (!acc[curr]) acc[curr] = { subtotal: 0, total: 0, paid: 0, balance: 0 };
+      if (!acc[curr]) acc[curr] = { subtotal: 0, total: 0, paid: 0, balance: 0, tax_amount: 0 };
       
-      // Track subtotal for Revenue, total for AR
+      // Track subtotal for Revenue, total for AR, and explicit VAT tax_amount for the Audit
       acc[curr].subtotal += doc.subtotal || 0;
+      acc[curr].tax_amount += doc.tax_amount || 0;
       acc[curr].total += doc.total_amount || 0;
       acc[curr].paid += doc.paid || 0;
       acc[curr].balance += doc.balance || 0;
       return acc;
-    }, {} as Record<string, { subtotal: number; total: number; paid: number; balance: number }>);
+    }, {} as Record<string, { subtotal: number; total: number; paid: number; balance: number; tax_amount: number }>);
   }, [documentData, activeCurrenciesInPeriod]);
 
   const exportFullStatementCSV = () => {
@@ -1145,7 +1151,7 @@ export default function Reports() {
     });
 
     pushLine('INVOICES MAIN');
-    pushLine('Invoice date', 'Currency', 'Company/client', 'Project/Events', 'Location', 'Invoice number', 'Tax rate(VAT)', 'Total Amount (Incl. VAT)', 'Paid', 'Balance', 'Status');
+    pushLine('Invoice date', 'Currency', 'Company/client', 'Project/Events', 'Location', 'Invoice number', 'Subtotal (Excl. VAT)', 'Tax rate(VAT)', 'VAT Amount', 'Total Amount (Incl. VAT)', 'Paid', 'Balance', 'Status');
     documentData.forEach(inv => {
       pushLine(
         formatDate(inv.issue_date),
@@ -1154,7 +1160,9 @@ export default function Reports() {
         inv.project_events,
         inv.location,
         inv.document_number,
+        inv.subtotal || 0,
         `${(inv.tax_percent || 0).toFixed(2)}%`,
+        inv.tax_amount || 0,
         inv.total_amount,
         inv.paid,
         inv.balance,
@@ -1316,7 +1324,7 @@ export default function Reports() {
 
   const exportInvoicesToCSV = (data: DocumentTotal[]) => {
     if (data.length === 0) return;
-    const headers = ['Invoice date', 'Currency', 'Company/client', 'Project/Events', 'Location', 'Invoice number', 'Tax rate(VAT)', 'Total Amount (Incl. VAT)', 'Paid', 'Balance', 'Status'];
+    const headers = ['Invoice date', 'Currency', 'Company/client', 'Project/Events', 'Location', 'Invoice number', 'Subtotal (Excl. VAT)', 'Tax rate(VAT)', 'VAT Amount', 'Total Amount (Incl. VAT)', 'Paid', 'Balance', 'Status'];
     const rows = data.map(item => [
       formatDate(item.issue_date),
       item.currency,
@@ -1324,7 +1332,9 @@ export default function Reports() {
       `"${item.project_events || ''}"`,
       `"${item.location || ''}"`,
       (item as any).document_number || (item as any).invoice_number || (item as any).number || '—',
+      item.subtotal || 0,
       `${(item.tax_percent || 0).toFixed(2)}%`,
+      item.tax_amount || 0,
       item.total_amount,
       item.paid,
       item.balance,
@@ -1732,10 +1742,11 @@ export default function Reports() {
                         <th className="px-2 py-2 text-left">Invoice Date</th>
                         <th className="px-1.5 py-2 text-left">Curr</th>
                         <th className="px-2 py-2 text-left">Company/Client</th>
-                        <th className="px-2 py-2 text-left">Project/Events</th>
                         <th className="px-2 py-2 text-left">Invoice #</th>
-                        <th className="px-1.5 py-2 text-right">VAT</th>
-                        <th className="px-2 py-2 text-right">Total Amount (Incl. VAT)</th>
+                        <th className="px-2 py-2 text-right">Subtotal (Excl. VAT)</th>
+                        <th className="px-1.5 py-2 text-right">VAT %</th>
+                        <th className="px-2 py-2 text-right">VAT Amount</th>
+                        <th className="px-2 py-2 text-right">Total (Incl. VAT)</th>
                         <th className="px-2 py-2 text-right">Paid</th>
                         <th className="px-2 py-2 text-right">Balance</th>
                         <th className="px-1.5 py-2 text-center">Status</th>
@@ -1747,10 +1758,11 @@ export default function Reports() {
                           <td className="px-2 py-1.5 whitespace-nowrap text-gray-900">{formatDate(item.issue_date)}</td>
                           <td className="px-1.5 py-1.5 font-bold text-gray-500">{item.currency}</td>
                           <td className="px-2 py-1.5 font-medium text-gray-900">{item.customer_name}</td>
-                          <td className="px-2 py-1.5 text-gray-600">{item.project_events || '—'}</td>
                           <td className="px-2 py-1.5 font-medium text-blue-700">{item.document_number}</td>
+                          <td className="px-2 py-1.5 text-right font-semibold text-gray-900">{formatCurrency(item.subtotal || 0, item.currency)}</td>
                           <td className="px-1.5 py-1.5 text-right text-gray-500">{(item.tax_percent || 0).toFixed(2)}%</td>
-                          <td className="px-2 py-1.5 text-right font-semibold text-gray-900">{formatCurrency(item.total_amount, item.currency)}</td>
+                          <td className="px-2 py-1.5 text-right text-indigo-600">{formatCurrency(item.tax_amount || 0, item.currency)}</td>
+                          <td className="px-2 py-1.5 text-right font-bold text-gray-900">{formatCurrency(item.total_amount, item.currency)}</td>
                           <td className="px-2 py-1.5 text-right text-emerald-700">{formatCurrency(item.paid || 0, item.currency)}</td>
                           <td className="px-2 py-1.5 text-right font-semibold text-amber-700">{formatCurrency(item.balance || 0, item.currency)}</td>
                           <td className="px-1.5 py-1.5 text-center">
@@ -1768,7 +1780,10 @@ export default function Reports() {
                     <tfoot className="bg-gray-50 font-bold border-t border-gray-300">
                       {Object.entries(invoiceTotalsByCurrency).map(([curr, totals]) => (
                         <tr key={curr}>
-                          <td colSpan={6} className="px-2 py-2 text-right uppercase text-gray-700 text-xs">Total ({curr}):</td>
+                          <td colSpan={4} className="px-2 py-2 text-right uppercase text-gray-700 text-xs">Total ({curr}):</td>
+                          <td className="px-2 py-2 text-right text-gray-900">{formatCurrency(totals.subtotal, curr)}</td>
+                          <td className="px-2 py-2 text-right"></td>
+                          <td className="px-2 py-2 text-right text-indigo-700">{formatCurrency(totals.tax_amount, curr)}</td>
                           <td className="px-2 py-2 text-right text-gray-900">{formatCurrency(totals.total, curr)}</td>
                           <td className="px-2 py-2 text-right text-emerald-700">{formatCurrency(totals.paid, curr)}</td>
                           <td className="px-2 py-2 text-right text-amber-700">{formatCurrency(totals.balance, curr)}</td>
@@ -1830,10 +1845,11 @@ export default function Reports() {
                 <div className="p-6 border-t border-gray-100 bg-gray-50 space-y-6">
                   <div>
                     <h4 className="text-sm font-bold text-gray-700 mb-3 uppercase tracking-wider">Include Report Sections</h4>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-4">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
                       {[
                         { key: 'profitLoss', label: 'P&L Statement' },
                         { key: 'netVat', label: 'Net VAT Summary' },
+                        { key: 'vatAudit', label: 'VAT Audit Breakdown' },
                         { key: 'revenueByPeriod', label: 'Revenue by Period' },
                         { key: 'customerRevenue', label: 'Customer Revenue' },
                         { key: 'outstandingInvoices', label: 'Outstanding Invoices' },
@@ -1929,7 +1945,7 @@ export default function Reports() {
                 </div>
               )}
 
-              {/* Net VAT Summary Section */}
+              {/* 2. Net VAT Summary Section */}
               {visibleSections.netVat && (
                 <div className="bg-white rounded-lg shadow">
                   <div
@@ -1992,7 +2008,78 @@ export default function Reports() {
                 </div>
               )}
 
-              {/* 2. Revenue by Period */}
+              {/* 3. NEW VAT AUDIT BREAKDOWN SECTION */}
+              {visibleSections.vatAudit && (
+                <div className="bg-white rounded-lg shadow">
+                  <div
+                    role="button"
+                    onClick={() => toggleSection('vatAudit')}
+                    className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 cursor-pointer select-none"
+                  >
+                    <div className="flex items-center gap-3">
+                      <Calculator className="w-6 h-6 text-indigo-600" />
+                      <h2 className="text-xl font-semibold text-gray-900">VAT Audit (Invoice Breakdown)</h2>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          exportInvoicesToCSV(documentData);
+                        }}
+                      >
+                        <Download className="w-4 h-4 mr-1" />
+                        Export
+                      </Button>
+                      {expandedSections['vatAudit'] ? <ChevronUp className="w-5 h-5 text-gray-400" /> : <ChevronDown className="w-5 h-5 text-gray-400" />}
+                    </div>
+                  </div>
+
+                  {expandedSections['vatAudit'] && (
+                    <div className="px-6 pb-6">
+                      <div className="overflow-x-auto">
+                        <table className="min-w-full divide-y divide-gray-200">
+                          <thead className="bg-gray-50">
+                            <tr>
+                              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Invoice Date</th>
+                              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Curr</th>
+                              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Invoice #</th>
+                              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Client</th>
+                              <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Subtotal (Excl. VAT)</th>
+                              <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">VAT %</th>
+                              <th className="px-4 py-3 text-right text-xs font-bold text-indigo-600 uppercase">VAT Amount (Output VAT)</th>
+                            </tr>
+                          </thead>
+                          <tbody className="bg-white divide-y divide-gray-200">
+                            {documentData.map((item) => (
+                              <tr key={item.document_id} className="hover:bg-gray-50">
+                                <td className="px-4 py-3 text-sm text-gray-900 whitespace-nowrap">{formatDate(item.issue_date)}</td>
+                                <td className="px-4 py-3 text-sm font-bold text-gray-500">{item.currency}</td>
+                                <td className="px-4 py-3 text-sm text-blue-600 font-medium">{item.document_number}</td>
+                                <td className="px-4 py-3 text-sm text-gray-900">{item.customer_name}</td>
+                                <td className="px-4 py-3 text-sm text-right text-gray-900 font-medium">{formatCurrency(item.subtotal || 0, item.currency)}</td>
+                                <td className="px-4 py-3 text-sm text-right text-gray-600">{(item.tax_percent || 0).toFixed(2)}%</td>
+                                <td className="px-4 py-3 text-sm text-right font-bold text-indigo-600">{formatCurrency(item.tax_amount || 0, item.currency)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                          <tfoot className="bg-gray-50 font-bold border-t border-gray-300">
+                            {Object.entries(invoiceTotalsByCurrency).map(([curr, totals]) => (
+                              <tr key={curr}>
+                                <td colSpan={6} className="px-4 py-3 text-right uppercase text-gray-700 text-xs">Total Output VAT ({curr}):</td>
+                                <td className="px-4 py-3 text-right text-indigo-700">{formatCurrency(totals.tax_amount, curr)}</td>
+                              </tr>
+                            ))}
+                          </tfoot>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* 4. Revenue by Period */}
               {visibleSections.revenueByPeriod && (
                 <div className="bg-white rounded-lg shadow">
                   <div
@@ -2051,7 +2138,7 @@ export default function Reports() {
                 </div>
               )}
 
-              {/* 3. Customer Revenue */}
+              {/* 5. Customer Revenue */}
               {visibleSections.customerRevenue && (
                 <div className="bg-white rounded-lg shadow">
                   <div
@@ -2116,7 +2203,7 @@ export default function Reports() {
                 </div>
               )}
 
-              {/* 4. Outstanding Invoices */}
+              {/* 6. Outstanding Invoices */}
               {visibleSections.outstandingInvoices && (
                 <div className="bg-white rounded-lg shadow">
                   <div
@@ -2181,7 +2268,7 @@ export default function Reports() {
                 </div>
               )}
 
-              {/* 5. Monthly Invoice Report */}
+              {/* 7. Monthly Invoice Report */}
               {visibleSections.invoiceList && (
                 <div className="bg-white rounded-lg shadow">
                   <div
@@ -2262,7 +2349,7 @@ export default function Reports() {
                 </div>
               )}
 
-              {/* 6. Payments Received Log */}
+              {/* 8. Payments Received Log */}
               {visibleSections.paymentsLog && (
                 <div className="bg-white rounded-lg shadow">
                   <div
