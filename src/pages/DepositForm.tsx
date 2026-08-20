@@ -4,6 +4,7 @@ import { ArrowLeft, Wallet, Save, Upload, X, Download, Eye } from 'lucide-react'
 import { supabase } from '../lib/supabase';
 import { Button } from '../components/Button';
 import { useAuth } from '../contexts/AuthContext';
+import { useCurrencyFormatter } from '../lib/currency-utils'; // Inject the dynamic currency hook
 import {
   uploadFile,
   deleteFile,
@@ -52,12 +53,15 @@ export default function DepositForm() {
   const p = (path: string) => `/${slug}${path}`;
   const location = useLocation();
   const { user, userProfile } = useAuth();
+  
+  // Bring in the dynamic active currencies from global state
+  const { activeCurrencies } = useCurrencyFormatter();
+
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [paymentCategories, setPaymentCategories] = useState<PaymentCategory[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
-  const [currencies, setCurrencies] = useState<Currency[]>([]);
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [selectedAccount, setSelectedAccount] = useState<Account | null>(null);
@@ -66,6 +70,7 @@ export default function DepositForm() {
   const [attachments, setAttachments] = useState<UploadedFile[]>([]);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [uploadingFiles, setUploadingFiles] = useState(false);
+  
   const [formData, setFormData] = useState({
     payment_category_id: '',
     account_id: '',
@@ -91,14 +96,21 @@ export default function DepositForm() {
     }
   }, [id]);
 
+  // Safely set the default currency if it's a new deposit and currencies are loaded
   useEffect(() => {
-    if (formData.currency_id && currencies.length > 0) {
-      const currency = currencies.find(c => c.id === formData.currency_id);
+    if (activeCurrencies && activeCurrencies.length > 0 && !formData.currency_id && !id) {
+      setFormData(prev => ({ ...prev, currency_id: activeCurrencies[0].id }));
+    }
+  }, [activeCurrencies, formData.currency_id, id]);
+
+  useEffect(() => {
+    if (formData.currency_id && activeCurrencies.length > 0) {
+      const currency = activeCurrencies.find(c => c.id === formData.currency_id);
       if (currency) {
-        setSelectedCurrency(currency);
+        setSelectedCurrency(currency as unknown as Currency);
       }
     }
-  }, [formData.currency_id, currencies]);
+  }, [formData.currency_id, activeCurrencies]);
 
   useEffect(() => {
     const fetchAccountBalance = async () => {
@@ -127,10 +139,9 @@ export default function DepositForm() {
 
   const fetchCategories = async () => {
     try {
-      const [paymentRes, accountsRes, currenciesRes, usersRes, customersRes] = await Promise.all([
+      const [paymentRes, accountsRes, usersRes, customersRes] = await Promise.all([
         supabase.from('payment_categories').select('id, name').eq('is_active', true).order('name'),
         supabase.from('accounts').select('id, name, account_number, account_type').eq('is_active', true).is('deleted_at', null).order('name'),
-        supabase.from('currencies').select('id, code, name, symbol, decimal_places').order('display_order'),
         supabase.from('user_profiles').select('id, email').eq('is_active', true).order('email'),
         supabase.from('customers').select('id, name, email').is('deleted_at', null).order('name'),
       ]);
@@ -139,13 +150,6 @@ export default function DepositForm() {
       if (accountsRes.data) setAccounts(accountsRes.data);
       if (usersRes.data) setUsers(usersRes.data);
       if (customersRes.data) setCustomers(customersRes.data);
-      if (currenciesRes.data) {
-        setCurrencies(currenciesRes.data);
-        if (currenciesRes.data.length > 0 && !id) {
-          const defaultCurrency = currenciesRes.data[0];
-          setFormData(prev => ({ ...prev, currency_id: defaultCurrency.id }));
-        }
-      }
     } catch (error) {
       console.error('Error fetching categories:', error);
     }
@@ -483,7 +487,7 @@ export default function DepositForm() {
                   required
                 >
                   <option value="">Select currency</option>
-                  {currencies.map((curr) => (
+                  {activeCurrencies.map((curr) => (
                     <option key={curr.id} value={curr.id}>
                       {curr.code} {curr.symbol ? `(${curr.symbol})` : ''} - {curr.name}
                     </option>
