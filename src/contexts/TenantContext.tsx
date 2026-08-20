@@ -2,6 +2,15 @@ import { createContext, useContext, useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 
+export interface Currency {
+  id: string;
+  code: string;
+  name: string;
+  symbol: string;
+  is_active: boolean;
+  display_order: number;
+}
+
 interface TenantCompany {
   id: string;
   name: string;
@@ -19,6 +28,7 @@ interface TenantSettings {
 interface TenantContextType {
   company: TenantCompany | null;
   settings: TenantSettings | null;
+  currencies: Currency[];
   slug: string;
   loading: boolean;
   notFound: boolean;
@@ -30,6 +40,7 @@ export function TenantProvider({ children }: { children: React.ReactNode }) {
   const { slug } = useParams<{ slug: string }>();
   const [company, setCompany] = useState<TenantCompany | null>(null);
   const [settings, setSettings] = useState<TenantSettings | null>(null);
+  const [currencies, setCurrencies] = useState<Currency[]>([]);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
 
@@ -46,6 +57,7 @@ export function TenantProvider({ children }: { children: React.ReactNode }) {
     setLoading(true);
     setNotFound(false);
 
+    // 1. Fetch Company
     const { data: companyData, error } = await supabase
       .from('companies')
       .select('id, name, slug, status, subscription_tier')
@@ -60,6 +72,7 @@ export function TenantProvider({ children }: { children: React.ReactNode }) {
 
     setCompany(companyData);
 
+    // 2. Fetch Settings
     const { data: settingsData } = await supabase
       .from('company_settings')
       .select('company_name, logo_url, header_display_mode')
@@ -67,6 +80,16 @@ export function TenantProvider({ children }: { children: React.ReactNode }) {
       .maybeSingle();
 
     setSettings(settingsData ?? null);
+
+    // 3. Fetch Active Currencies for this Company
+    const { data: currenciesData } = await supabase
+      .from('currencies')
+      .select('*')
+      .eq('company_id', companyData.id)
+      .eq('is_active', true)
+      .order('display_order', { ascending: true });
+
+    setCurrencies(currenciesData || []);
     setLoading(false);
   };
 
@@ -75,6 +98,7 @@ export function TenantProvider({ children }: { children: React.ReactNode }) {
       value={{
         company,
         settings,
+        currencies,
         slug: slug ?? '',
         loading,
         notFound,
