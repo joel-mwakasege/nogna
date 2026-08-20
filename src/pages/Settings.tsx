@@ -594,7 +594,6 @@ export default function Settings() {
     }
   };
 
-  // --- UPDATED FETCH FUNCTION TO FIX REAPPEARING CURRENCY ---
   const fetchCurrencies = async (companyId?: string) => {
     const targetCompanyId = companyId || userCompanyId;
     if (!targetCompanyId) return;
@@ -603,8 +602,8 @@ export default function Settings() {
       const { data, error } = await supabase
         .from('currencies')
         .select('*')
-        .eq('company_id', targetCompanyId)  // Ensure we only fetch for this company
-        .eq('is_active', true)              // IMPORTANT: Filter out soft-deleted currencies!
+        .eq('company_id', targetCompanyId)  
+        .eq('is_active', true)              
         .order('display_order', { ascending: true });
 
       if (error) throw error;
@@ -653,7 +652,7 @@ export default function Settings() {
           symbol: newCurrencySymbol,
           display_order: currencies.length,
           company_id: userCompanyId,
-          is_active: true, // EXPLICITLY ACTIVATE
+          is_active: true, 
         })
         .select()
         .single();
@@ -664,17 +663,16 @@ export default function Settings() {
       setNewCurrencyCode('');
       setNewCurrencyName('');
       setNewCurrencySymbol('');
+      window.dispatchEvent(new Event('currencies-updated')); // Shout the update!
       showMessage('success', 'Currency added successfully!');
     } catch (error: any) {
       console.error('Error adding currency:', error);
-      // Surface the exact DB error to the UI so we can see if it's a constraint issue
       showMessage('error', error.message || 'Failed to add currency');
     }
   };
 
   const deleteCurrency = async (id: string) => {
     try {
-      // Perform a SOFT DELETE instead of a HARD DELETE
       const { error } = await supabase
         .from('currencies')
         .update({ is_active: false })
@@ -682,8 +680,8 @@ export default function Settings() {
 
       if (error) throw error;
 
-      // Filter out deactivated currencies from the view
       setCurrencies(currencies.filter((currency) => currency.id !== id));
+      window.dispatchEvent(new Event('currencies-updated')); // Shout the update!
       showMessage('success', 'Currency removed successfully!');
     } catch (error: any) {
       console.error('Error deleting currency:', error);
