@@ -53,7 +53,6 @@ export default function ExpenseForm() {
   const p = (path: string) => `/${slug}${path}`;
   const { user, userProfile } = useAuth();
   
-  // Bring in the dynamic active currencies
   const { activeCurrencies } = useCurrencyFormatter();
 
   const [loading, setLoading] = useState(false);
@@ -93,7 +92,6 @@ export default function ExpenseForm() {
     }
   }, [id]);
 
-  // Set the default currency safely once activeCurrencies load (if this is a new expense)
   useEffect(() => {
     if (activeCurrencies && activeCurrencies.length > 0 && !formData.currency_id && !id) {
       setFormData(prev => ({ ...prev, currency_id: activeCurrencies[0].id }));
@@ -104,7 +102,6 @@ export default function ExpenseForm() {
     if (formData.currency_id && activeCurrencies.length > 0) {
       const currency = activeCurrencies.find(c => c.id === formData.currency_id);
       if (currency) {
-        // We cast as unknown as Currency to ensure TS knows about decimal_places
         setSelectedCurrency(currency as unknown as Currency);
       }
     }
