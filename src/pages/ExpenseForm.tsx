@@ -399,7 +399,6 @@ export default function ExpenseForm() {
         }
         setUploadingFiles(false);
       }
-
       navigate(p('/expenses'));
     } catch (err: any) {
       console.error('Error saving expense:', err);
