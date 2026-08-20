@@ -594,6 +594,7 @@ export default function Settings() {
     }
   };
 
+  // --- UPDATED FETCH FUNCTION TO FIX REAPPEARING CURRENCY ---
   const fetchCurrencies = async (companyId?: string) => {
     const targetCompanyId = companyId || userCompanyId;
     if (!targetCompanyId) return;
@@ -602,6 +603,8 @@ export default function Settings() {
       const { data, error } = await supabase
         .from('currencies')
         .select('*')
+        .eq('company_id', targetCompanyId)  // Ensure we only fetch for this company
+        .eq('is_active', true)              // IMPORTANT: Filter out soft-deleted currencies!
         .order('display_order', { ascending: true });
 
       if (error) throw error;
@@ -610,9 +613,9 @@ export default function Settings() {
         if (!user) return;
 
         const defaultCurrencies = [
-          { code: 'USD', name: 'US Dollar', symbol: '$', display_order: 0, company_id: targetCompanyId },
-          { code: 'EUR', name: 'Euro', symbol: '€', display_order: 1, company_id: targetCompanyId },
-          { code: 'GBP', name: 'British Pound', symbol: '£', display_order: 2, company_id: targetCompanyId },
+          { code: 'USD', name: 'US Dollar', symbol: '$', display_order: 0, company_id: targetCompanyId, is_active: true },
+          { code: 'EUR', name: 'Euro', symbol: '€', display_order: 1, company_id: targetCompanyId, is_active: true },
+          { code: 'GBP', name: 'British Pound', symbol: '£', display_order: 2, company_id: targetCompanyId, is_active: true },
         ];
 
         const { data: insertedCurrencies, error: insertError } = await supabase
