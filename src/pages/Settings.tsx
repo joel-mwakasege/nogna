@@ -650,6 +650,7 @@ export default function Settings() {
           symbol: newCurrencySymbol,
           display_order: currencies.length,
           company_id: userCompanyId,
+          is_active: true, // EXPLICITLY ACTIVATE
         })
         .select()
         .single();
@@ -661,26 +662,29 @@ export default function Settings() {
       setNewCurrencyName('');
       setNewCurrencySymbol('');
       showMessage('success', 'Currency added successfully!');
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error adding currency:', error);
-      showMessage('error', 'Failed to add currency');
+      // Surface the exact DB error to the UI so we can see if it's a constraint issue
+      showMessage('error', error.message || 'Failed to add currency');
     }
   };
 
   const deleteCurrency = async (id: string) => {
     try {
+      // Perform a SOFT DELETE instead of a HARD DELETE
       const { error } = await supabase
         .from('currencies')
-        .delete()
+        .update({ is_active: false })
         .eq('id', id);
 
       if (error) throw error;
 
+      // Filter out deactivated currencies from the view
       setCurrencies(currencies.filter((currency) => currency.id !== id));
-      showMessage('success', 'Currency deleted successfully!');
-    } catch (error) {
+      showMessage('success', 'Currency removed successfully!');
+    } catch (error: any) {
       console.error('Error deleting currency:', error);
-      showMessage('error', 'Failed to delete currency');
+      showMessage('error', error.message || 'Failed to delete currency');
     }
   };
 
@@ -892,99 +896,125 @@ export default function Settings() {
               <div className="space-y-8">
                 <section>
                   <h2 className="text-lg font-semibold text-gray-900 mb-4">Company Information</h2>
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Company Name
-                  </label>
-                  <input
-                    type="text"
-                    value={settings.company_name}
-                    onChange={(e) => updateField('company_name', e.target.value)}
-                    placeholder="Your Company Name"
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-slate-500 focus:border-transparent"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Company Logo
-                  </label>
-                  {settings.logo_url ? (
-                    <div className="space-y-3">
-                      <div className="flex items-center gap-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
-                        <img
-                          src={settings.logo_url}
-                          alt="Company Logo"
-                          className="h-16 w-auto object-contain"
-                        />
-                        <div className="flex-1">
-                          <p className="text-sm text-gray-600">Current logo</p>
-                        </div>
-                        <button
-                          onClick={handleRemoveLogo}
-                          className="flex items-center gap-2 px-3 py-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors text-sm font-medium"
-                        >
-                          <X className="w-4 h-4" />
-                          Remove
-                        </button>
-                      </div>
-                      <label className="flex items-center justify-center gap-2 px-4 py-3 border-2 border-dashed border-gray-300 rounded-lg hover:border-slate-500 cursor-pointer transition-colors">
-                        <Upload className="w-5 h-5 text-gray-400" />
-                        <span className="text-sm font-medium text-gray-600">
-                          {uploading ? 'Uploading...' : 'Replace Logo'}
-                        </span>
-                        <input
-                          type="file"
-                          accept="image/*"
-                          onChange={handleLogoUpload}
-                          disabled={uploading}
-                          className="hidden"
-                        />
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Company Name
                       </label>
-                    </div>
-                  ) : (
-                    <label className="flex flex-col items-center justify-center gap-3 px-4 py-8 border-2 border-dashed border-gray-300 rounded-lg hover:border-slate-500 cursor-pointer transition-colors">
-                      <Upload className="w-8 h-8 text-gray-400" />
-                      <div className="text-center">
-                        <p className="text-sm font-medium text-gray-600">
-                          {uploading ? 'Uploading...' : 'Upload Company Logo'}
-                        </p>
-                        <p className="text-xs text-gray-500 mt-1">PNG, JPG, or SVG</p>
-                      </div>
                       <input
-                        type="file"
-                        accept="image/*"
-                        onChange={handleLogoUpload}
-                        disabled={uploading}
-                        className="hidden"
+                        type="text"
+                        value={settings.company_name}
+                        onChange={(e) => updateField('company_name', e.target.value)}
+                        placeholder="Your Company Name"
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-slate-500 focus:border-transparent"
                       />
-                    </label>
-                  )}
-                </div>
+                    </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Invoice Letterhead
-                  </label>
-                  <p className="text-xs text-gray-500 mb-3">
-                    Upload a custom letterhead image that will appear at the top of exported invoices and documents. Recommended: wide banner format (e.g. 1200x300px).
-                  </p>
-                  {settings.letterhead_url ? (
-                    <div className="space-y-3">
-                      <div className="rounded-lg border border-gray-200 overflow-hidden bg-gray-50">
-                        <img
-                          src={settings.letterhead_url}
-                          alt="Invoice Letterhead"
-                          className="w-full h-auto max-h-40 object-contain"
-                        />
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <label className="flex items-center justify-center gap-2 px-4 py-2 border-2 border-dashed border-gray-300 rounded-lg hover:border-slate-500 cursor-pointer transition-colors flex-1">
-                          <Upload className="w-4 h-4 text-gray-400" />
-                          <span className="text-sm font-medium text-gray-600">
-                            {uploading ? 'Uploading...' : 'Replace Letterhead'}
-                          </span>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Company Logo
+                      </label>
+                      {settings.logo_url ? (
+                        <div className="space-y-3">
+                          <div className="flex items-center gap-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                            <img
+                              src={settings.logo_url}
+                              alt="Company Logo"
+                              className="h-16 w-auto object-contain"
+                            />
+                            <div className="flex-1">
+                              <p className="text-sm text-gray-600">Current logo</p>
+                            </div>
+                            <button
+                              onClick={handleRemoveLogo}
+                              className="flex items-center gap-2 px-3 py-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors text-sm font-medium"
+                            >
+                              <X className="w-4 h-4" />
+                              Remove
+                            </button>
+                          </div>
+                          <label className="flex items-center justify-center gap-2 px-4 py-3 border-2 border-dashed border-gray-300 rounded-lg hover:border-slate-500 cursor-pointer transition-colors">
+                            <Upload className="w-5 h-5 text-gray-400" />
+                            <span className="text-sm font-medium text-gray-600">
+                              {uploading ? 'Uploading...' : 'Replace Logo'}
+                            </span>
+                            <input
+                              type="file"
+                              accept="image/*"
+                              onChange={handleLogoUpload}
+                              disabled={uploading}
+                              className="hidden"
+                            />
+                          </label>
+                        </div>
+                      ) : (
+                        <label className="flex flex-col items-center justify-center gap-3 px-4 py-8 border-2 border-dashed border-gray-300 rounded-lg hover:border-slate-500 cursor-pointer transition-colors">
+                          <Upload className="w-8 h-8 text-gray-400" />
+                          <div className="text-center">
+                            <p className="text-sm font-medium text-gray-600">
+                              {uploading ? 'Uploading...' : 'Upload Company Logo'}
+                            </p>
+                            <p className="text-xs text-gray-500 mt-1">PNG, JPG, or SVG</p>
+                          </div>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            onChange={handleLogoUpload}
+                            disabled={uploading}
+                            className="hidden"
+                          />
+                        </label>
+                      )}
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Invoice Letterhead
+                      </label>
+                      <p className="text-xs text-gray-500 mb-3">
+                        Upload a custom letterhead image that will appear at the top of exported invoices and documents. Recommended: wide banner format (e.g. 1200x300px).
+                      </p>
+                      {settings.letterhead_url ? (
+                        <div className="space-y-3">
+                          <div className="rounded-lg border border-gray-200 overflow-hidden bg-gray-50">
+                            <img
+                              src={settings.letterhead_url}
+                              alt="Invoice Letterhead"
+                              className="w-full h-auto max-h-40 object-contain"
+                            />
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <label className="flex items-center justify-center gap-2 px-4 py-2 border-2 border-dashed border-gray-300 rounded-lg hover:border-slate-500 cursor-pointer transition-colors flex-1">
+                              <Upload className="w-4 h-4 text-gray-400" />
+                              <span className="text-sm font-medium text-gray-600">
+                                {uploading ? 'Uploading...' : 'Replace Letterhead'}
+                              </span>
+                              <input
+                                type="file"
+                                accept="image/*"
+                                onChange={handleLetterheadUpload}
+                                disabled={uploading}
+                                className="hidden"
+                              />
+                            </label>
+                            <button
+                              onClick={handleRemoveLetterhead}
+                              className="flex items-center gap-2 px-3 py-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors text-sm font-medium border border-red-200"
+                            >
+                              <X className="w-4 h-4" />
+                              Remove
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <label className="flex flex-col items-center justify-center gap-3 px-4 py-8 border-2 border-dashed border-gray-300 rounded-lg hover:border-slate-500 cursor-pointer transition-colors">
+                          <Upload className="w-8 h-8 text-gray-400" />
+                          <div className="text-center">
+                            <p className="text-sm font-medium text-gray-600">
+                              {uploading ? 'Uploading...' : 'Upload Invoice Letterhead'}
+                            </p>
+                            <p className="text-xs text-gray-500 mt-1">PNG, JPG — wide banner format recommended</p>
+                          </div>
                           <input
                             type="file"
                             accept="image/*"
@@ -993,398 +1023,372 @@ export default function Settings() {
                             className="hidden"
                           />
                         </label>
-                        <button
-                          onClick={handleRemoveLetterhead}
-                          className="flex items-center gap-2 px-3 py-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors text-sm font-medium border border-red-200"
-                        >
-                          <X className="w-4 h-4" />
-                          Remove
-                        </button>
-                      </div>
+                      )}
                     </div>
-                  ) : (
-                    <label className="flex flex-col items-center justify-center gap-3 px-4 py-8 border-2 border-dashed border-gray-300 rounded-lg hover:border-slate-500 cursor-pointer transition-colors">
-                      <Upload className="w-8 h-8 text-gray-400" />
-                      <div className="text-center">
-                        <p className="text-sm font-medium text-gray-600">
-                          {uploading ? 'Uploading...' : 'Upload Invoice Letterhead'}
-                        </p>
-                        <p className="text-xs text-gray-500 mt-1">PNG, JPG — wide banner format recommended</p>
-                      </div>
-                      <input
-                        type="file"
-                        accept="image/*"
-                        onChange={handleLetterheadUpload}
-                        disabled={uploading}
-                        className="hidden"
-                      />
-                    </label>
-                  )}
-                </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Header Display
-                  </label>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                    <button
-                      type="button"
-                      onClick={() => updateField('header_display_mode', 'text')}
-                      className={`px-4 py-3 rounded-lg border-2 font-medium text-sm transition-colors ${
-                        settings.header_display_mode === 'text'
-                          ? 'border-slate-700 bg-slate-700 text-white'
-                          : 'border-gray-300 bg-white text-gray-700 hover:border-gray-400'
-                      }`}
-                    >
-                      Text Only
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => updateField('header_display_mode', 'logo')}
-                      className={`px-4 py-3 rounded-lg border-2 font-medium text-sm transition-colors ${
-                        settings.header_display_mode === 'logo'
-                          ? 'border-slate-700 bg-slate-700 text-white'
-                          : 'border-gray-300 bg-white text-gray-700 hover:border-gray-400'
-                      }`}
-                    >
-                      Logo Only
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => updateField('header_display_mode', 'both')}
-                      className={`px-4 py-3 rounded-lg border-2 font-medium text-sm transition-colors ${
-                        settings.header_display_mode === 'both'
-                          ? 'border-slate-700 bg-slate-700 text-white'
-                          : 'border-gray-300 bg-white text-gray-700 hover:border-gray-400'
-                      }`}
-                    >
-                      Logo & Text
-                    </button>
-                  </div>
-                  <p className="text-xs text-gray-500 mt-2">
-                    Choose how your company branding appears in the header
-                  </p>
-                </div>
-              </div>
-            </section>
-
-            <section>
-              <h2 className="text-lg font-semibold text-gray-900 mb-4">Contact Information</h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Phone</label>
-                  <input
-                    type="text"
-                    value={settings.phone}
-                    onChange={(e) => updateField('phone', e.target.value)}
-                    placeholder="+1 (555) 123-4567"
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-slate-500 focus:border-transparent"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
-                  <input
-                    type="email"
-                    value={settings.email}
-                    onChange={(e) => updateField('email', e.target.value)}
-                    placeholder="contact@company.com"
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-slate-500 focus:border-transparent"
-                  />
-                </div>
-              </div>
-            </section>
-
-            <section>
-              <h2 className="text-lg font-semibold text-gray-900 mb-4">Address</h2>
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Address Line 1
-                  </label>
-                  <input
-                    type="text"
-                    value={settings.address_line1}
-                    onChange={(e) => updateField('address_line1', e.target.value)}
-                    placeholder="123 Main Street"
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-slate-500 focus:border-transparent"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Address Line 2
-                  </label>
-                  <input
-                    type="text"
-                    value={settings.address_line2}
-                    onChange={(e) => updateField('address_line2', e.target.value)}
-                    placeholder="Suite 100"
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-slate-500 focus:border-transparent"
-                  />
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">City</label>
-                    <input
-                      type="text"
-                      value={settings.city}
-                      onChange={(e) => updateField('city', e.target.value)}
-                      placeholder="New York"
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-slate-500 focus:border-transparent"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">State</label>
-                    <input
-                      type="text"
-                      value={settings.state}
-                      onChange={(e) => updateField('state', e.target.value)}
-                      placeholder="NY"
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-slate-500 focus:border-transparent"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      ZIP Code
-                    </label>
-                    <input
-                      type="text"
-                      value={settings.zip_code}
-                      onChange={(e) => updateField('zip_code', e.target.value)}
-                      placeholder="10001"
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-slate-500 focus:border-transparent"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Country</label>
-                  <input
-                    type="text"
-                    value={settings.country}
-                    onChange={(e) => updateField('country', e.target.value)}
-                    placeholder="United States"
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-slate-500 focus:border-transparent"
-                  />
-                </div>
-              </div>
-            </section>
-
-            <section>
-              <h2 className="text-lg font-semibold text-gray-900 mb-4">Banking Details</h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Bank Name
-                  </label>
-                  <input
-                    type="text"
-                    value={settings.bank_name}
-                    onChange={(e) => updateField('bank_name', e.target.value)}
-                    placeholder="First National Bank"
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-slate-500 focus:border-transparent"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Account Holder Name
-                  </label>
-                  <input
-                    type="text"
-                    value={settings.account_holder_name}
-                    onChange={(e) => updateField('account_holder_name', e.target.value)}
-                    placeholder="Your Company Name"
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-slate-500 focus:border-transparent"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Account Number
-                  </label>
-                  <input
-                    type="text"
-                    value={settings.account_number}
-                    onChange={(e) => updateField('account_number', e.target.value)}
-                    placeholder="123456789"
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-slate-500 focus:border-transparent"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Routing Number
-                  </label>
-                  <input
-                    type="text"
-                    value={settings.routing_number}
-                    onChange={(e) => updateField('routing_number', e.target.value)}
-                    placeholder="021000021"
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-slate-500 focus:border-transparent"
-                  />
-                </div>
-              </div>
-            </section>
-
-            <section>
-              <h2 className="text-lg font-semibold text-gray-900 mb-4">Document Numbering</h2>
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Numbering Mode
-                  </label>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    <button
-                      type="button"
-                      onClick={() => updateField('document_numbering_mode', 'manual')}
-                      className={`px-4 py-3 rounded-lg border-2 font-medium text-sm transition-colors ${
-                        settings.document_numbering_mode === 'manual'
-                          ? 'border-slate-700 bg-slate-700 text-white'
-                          : 'border-gray-300 bg-white text-gray-700 hover:border-gray-400'
-                      }`}
-                    >
-                      Manual Entry
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => updateField('document_numbering_mode', 'auto')}
-                      className={`px-4 py-3 rounded-lg border-2 font-medium text-sm transition-colors ${
-                        settings.document_numbering_mode === 'auto'
-                          ? 'border-slate-700 bg-slate-700 text-white'
-                          : 'border-gray-300 bg-white text-gray-700 hover:border-gray-400'
-                      }`}
-                    >
-                      Auto-Generated
-                    </button>
-                  </div>
-                  <p className="text-xs text-gray-500 mt-2">
-                    {settings.document_numbering_mode === 'manual'
-                      ? 'You will manually enter document numbers when creating new documents'
-                      : 'Document numbers will be automatically generated using the prefix and counter below'}
-                  </p>
-                </div>
-
-                {settings.document_numbering_mode === 'auto' && (
-                  <>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Number Prefix
+                        Header Display
+                      </label>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        <button
+                          type="button"
+                          onClick={() => updateField('header_display_mode', 'text')}
+                          className={`px-4 py-3 rounded-lg border-2 font-medium text-sm transition-colors ${
+                            settings.header_display_mode === 'text'
+                              ? 'border-slate-700 bg-slate-700 text-white'
+                              : 'border-gray-300 bg-white text-gray-700 hover:border-gray-400'
+                          }`}
+                        >
+                          Text Only
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => updateField('header_display_mode', 'logo')}
+                          className={`px-4 py-3 rounded-lg border-2 font-medium text-sm transition-colors ${
+                            settings.header_display_mode === 'logo'
+                              ? 'border-slate-700 bg-slate-700 text-white'
+                              : 'border-gray-300 bg-white text-gray-700 hover:border-gray-400'
+                          }`}
+                        >
+                          Logo Only
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => updateField('header_display_mode', 'both')}
+                          className={`px-4 py-3 rounded-lg border-2 font-medium text-sm transition-colors ${
+                            settings.header_display_mode === 'both'
+                              ? 'border-slate-700 bg-slate-700 text-white'
+                              : 'border-gray-300 bg-white text-gray-700 hover:border-gray-400'
+                          }`}
+                        >
+                          Logo & Text
+                        </button>
+                      </div>
+                      <p className="text-xs text-gray-500 mt-2">
+                        Choose how your company branding appears in the header
+                      </p>
+                    </div>
+                  </div>
+                </section>
+
+                <section>
+                  <h2 className="text-lg font-semibold text-gray-900 mb-4">Contact Information</h2>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Phone</label>
+                      <input
+                        type="text"
+                        value={settings.phone}
+                        onChange={(e) => updateField('phone', e.target.value)}
+                        placeholder="+1 (555) 123-4567"
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-slate-500 focus:border-transparent"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Email</label>
+                      <input
+                        type="email"
+                        value={settings.email}
+                        onChange={(e) => updateField('email', e.target.value)}
+                        placeholder="contact@company.com"
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-slate-500 focus:border-transparent"
+                      />
+                    </div>
+                  </div>
+                </section>
+
+                <section>
+                  <h2 className="text-lg font-semibold text-gray-900 mb-4">Address</h2>
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Address Line 1
                       </label>
                       <input
                         type="text"
-                        value={settings.document_number_prefix}
-                        onChange={(e) => updateField('document_number_prefix', e.target.value)}
-                        placeholder="DOC-"
+                        value={settings.address_line1}
+                        onChange={(e) => updateField('address_line1', e.target.value)}
+                        placeholder="123 Main Street"
                         className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-slate-500 focus:border-transparent"
                       />
-                      <p className="text-xs text-gray-500 mt-1">
-                        Example: With prefix "INV-2025-" and counter 1, the document number will be "INV-2025-1"
-                      </p>
                     </div>
 
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Next Document Number
+                        Address Line 2
                       </label>
                       <input
-                        type="number"
-                        min="1"
-                        value={settings.document_number_counter}
-                        onChange={(e) => updateField('document_number_counter', e.target.value)}
+                        type="text"
+                        value={settings.address_line2}
+                        onChange={(e) => updateField('address_line2', e.target.value)}
+                        placeholder="Suite 100"
                         className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-slate-500 focus:border-transparent"
                       />
-                      <p className="text-xs text-gray-500 mt-1">
-                        Current next document number: <span className="font-medium">{settings.document_number_prefix}{settings.document_number_counter}</span>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">City</label>
+                        <input
+                          type="text"
+                          value={settings.city}
+                          onChange={(e) => updateField('city', e.target.value)}
+                          placeholder="New York"
+                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-slate-500 focus:border-transparent"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">State</label>
+                        <input
+                          type="text"
+                          value={settings.state}
+                          onChange={(e) => updateField('state', e.target.value)}
+                          placeholder="NY"
+                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-slate-500 focus:border-transparent"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                          ZIP Code
+                        </label>
+                        <input
+                          type="text"
+                          value={settings.zip_code}
+                          onChange={(e) => updateField('zip_code', e.target.value)}
+                          placeholder="10001"
+                          className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-slate-500 focus:border-transparent"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">Country</label>
+                      <input
+                        type="text"
+                        value={settings.country}
+                        onChange={(e) => updateField('country', e.target.value)}
+                        placeholder="United States"
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-slate-500 focus:border-transparent"
+                      />
+                    </div>
+                  </div>
+                </section>
+
+                <section>
+                  <h2 className="text-lg font-semibold text-gray-900 mb-4">Banking Details</h2>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Bank Name
+                      </label>
+                      <input
+                        type="text"
+                        value={settings.bank_name}
+                        onChange={(e) => updateField('bank_name', e.target.value)}
+                        placeholder="First National Bank"
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-slate-500 focus:border-transparent"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Account Holder Name
+                      </label>
+                      <input
+                        type="text"
+                        value={settings.account_holder_name}
+                        onChange={(e) => updateField('account_holder_name', e.target.value)}
+                        placeholder="Your Company Name"
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-slate-500 focus:border-transparent"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Account Number
+                      </label>
+                      <input
+                        type="text"
+                        value={settings.account_number}
+                        onChange={(e) => updateField('account_number', e.target.value)}
+                        placeholder="123456789"
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-slate-500 focus:border-transparent"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Routing Number
+                      </label>
+                      <input
+                        type="text"
+                        value={settings.routing_number}
+                        onChange={(e) => updateField('routing_number', e.target.value)}
+                        placeholder="021000021"
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-slate-500 focus:border-transparent"
+                      />
+                    </div>
+                  </div>
+                </section>
+
+                <section>
+                  <h2 className="text-lg font-semibold text-gray-900 mb-4">Document Numbering</h2>
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Numbering Mode
+                      </label>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <button
+                          type="button"
+                          onClick={() => updateField('document_numbering_mode', 'manual')}
+                          className={`px-4 py-3 rounded-lg border-2 font-medium text-sm transition-colors ${
+                            settings.document_numbering_mode === 'manual'
+                              ? 'border-slate-700 bg-slate-700 text-white'
+                              : 'border-gray-300 bg-white text-gray-700 hover:border-gray-400'
+                          }`}
+                        >
+                          Manual Entry
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => updateField('document_numbering_mode', 'auto')}
+                          className={`px-4 py-3 rounded-lg border-2 font-medium text-sm transition-colors ${
+                            settings.document_numbering_mode === 'auto'
+                              ? 'border-slate-700 bg-slate-700 text-white'
+                              : 'border-gray-300 bg-white text-gray-700 hover:border-gray-400'
+                          }`}
+                        >
+                          Auto-Generated
+                        </button>
+                      </div>
+                      <p className="text-xs text-gray-500 mt-2">
+                        {settings.document_numbering_mode === 'manual'
+                          ? 'You will manually enter document numbers when creating new documents'
+                          : 'Document numbers will be automatically generated using the prefix and counter below'}
                       </p>
                     </div>
-                  </>
-                )}
-              </div>
-            </section>
 
-            <section>
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <h2 className="text-lg font-semibold text-gray-900">Custom Fields</h2>
-                  <p className="text-sm text-gray-500 mt-1">
-                    Add custom fields to include additional information in your documents
-                  </p>
-                </div>
-                <button
-                  onClick={addCustomField}
-                  className="flex items-center gap-2 px-4 py-2 bg-slate-700 text-white rounded-lg text-sm font-medium hover:bg-slate-800 transition-colors"
-                >
-                  <Plus className="w-4 h-4" />
-                  Add Field
-                </button>
-              </div>
-
-              {customFields.length > 0 ? (
-                <div className="space-y-3">
-                  {customFields.map((field) => (
-                    <div
-                      key={field.id}
-                      className="flex items-start gap-3 p-4 bg-gray-50 rounded-lg border border-gray-200"
-                    >
-                      <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {settings.document_numbering_mode === 'auto' && (
+                      <>
                         <div>
-                          <label className="block text-xs font-medium text-gray-600 mb-1">
-                            Field Label
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Number Prefix
                           </label>
                           <input
                             type="text"
-                            value={field.field_label}
-                            onChange={(e) =>
-                              updateCustomFieldLocally(field.id, { field_label: e.target.value })
-                            }
-                            onBlur={(e) =>
-                              updateCustomFieldInDB(field.id, { field_label: e.target.value })
-                            }
-                            placeholder="e.g., Website, Tax ID, Registration Number"
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-slate-500 focus:border-transparent text-sm"
+                            value={settings.document_number_prefix}
+                            onChange={(e) => updateField('document_number_prefix', e.target.value)}
+                            placeholder="DOC-"
+                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-slate-500 focus:border-transparent"
                           />
+                          <p className="text-xs text-gray-500 mt-1">
+                            Example: With prefix "INV-2025-" and counter 1, the document number will be "INV-2025-1"
+                          </p>
                         </div>
+
                         <div>
-                          <label className="block text-xs font-medium text-gray-600 mb-1">
-                            Field Value
+                          <label className="block text-sm font-medium text-gray-700 mb-2">
+                            Next Document Number
                           </label>
                           <input
-                            type="text"
-                            value={field.field_value}
-                            onChange={(e) =>
-                              updateCustomFieldLocally(field.id, { field_value: e.target.value })
-                            }
-                            onBlur={(e) =>
-                              updateCustomFieldInDB(field.id, { field_value: e.target.value })
-                            }
-                            placeholder="Enter value"
-                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-slate-500 focus:border-transparent text-sm"
+                            type="number"
+                            min="1"
+                            value={settings.document_number_counter}
+                            onChange={(e) => updateField('document_number_counter', e.target.value)}
+                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-slate-500 focus:border-transparent"
                           />
+                          <p className="text-xs text-gray-500 mt-1">
+                            Current next document number: <span className="font-medium">{settings.document_number_prefix}{settings.document_number_counter}</span>
+                          </p>
                         </div>
-                      </div>
-                      <button
-                        onClick={() => deleteCustomField(field.id)}
-                        className="text-red-500 hover:text-red-700 p-2 hover:bg-red-50 rounded-lg transition-colors mt-5"
-                        title="Delete field"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      </>
+                    )}
+                  </div>
+                </section>
+
+                <section>
+                  <div className="flex items-center justify-between mb-4">
+                    <div>
+                      <h2 className="text-lg font-semibold text-gray-900">Custom Fields</h2>
+                      <p className="text-sm text-gray-500 mt-1">
+                        Add custom fields to include additional information in your documents
+                      </p>
                     </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-center py-8 bg-gray-50 rounded-lg border border-gray-200">
-                  <p className="text-sm text-gray-500">
-                    No custom fields added yet. Click "Add Field" to create one.
-                  </p>
-                </div>
-              )}
-            </section>
+                    <button
+                      onClick={addCustomField}
+                      className="flex items-center gap-2 px-4 py-2 bg-slate-700 text-white rounded-lg text-sm font-medium hover:bg-slate-800 transition-colors"
+                    >
+                      <Plus className="w-4 h-4" />
+                      Add Field
+                    </button>
+                  </div>
+
+                  {customFields.length > 0 ? (
+                    <div className="space-y-3">
+                      {customFields.map((field) => (
+                        <div
+                          key={field.id}
+                          className="flex items-start gap-3 p-4 bg-gray-50 rounded-lg border border-gray-200"
+                        >
+                          <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-3">
+                            <div>
+                              <label className="block text-xs font-medium text-gray-600 mb-1">
+                                Field Label
+                              </label>
+                              <input
+                                type="text"
+                                value={field.field_label}
+                                onChange={(e) =>
+                                  updateCustomFieldLocally(field.id, { field_label: e.target.value })
+                                }
+                                onBlur={(e) =>
+                                  updateCustomFieldInDB(field.id, { field_label: e.target.value })
+                                }
+                                placeholder="e.g., Website, Tax ID, Registration Number"
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-slate-500 focus:border-transparent text-sm"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium text-gray-600 mb-1">
+                                Field Value
+                              </label>
+                              <input
+                                type="text"
+                                value={field.field_value}
+                                onChange={(e) =>
+                                  updateCustomFieldLocally(field.id, { field_value: e.target.value })
+                                }
+                                onBlur={(e) =>
+                                  updateCustomFieldInDB(field.id, { field_value: e.target.value })
+                                }
+                                placeholder="Enter value"
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-slate-500 focus:border-transparent text-sm"
+                              />
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => deleteCustomField(field.id)}
+                            className="text-red-500 hover:text-red-700 p-2 hover:bg-red-50 rounded-lg transition-colors mt-5"
+                            title="Delete field"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-center py-8 bg-gray-50 rounded-lg border border-gray-200">
+                      <p className="text-sm text-gray-500">
+                        No custom fields added yet. Click "Add Field" to create one.
+                      </p>
+                    </div>
+                  )}
+                </section>
 
                 <div className="flex justify-end pt-4 border-t border-gray-200">
                   <Button
