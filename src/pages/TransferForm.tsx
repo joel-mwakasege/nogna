@@ -4,8 +4,8 @@ import { ArrowLeft, ArrowRightLeft } from 'lucide-react';
 import { Button } from '../components/Button';
 import { supabase } from '../lib/supabase';
 import { Database } from '../lib/database.types';
-import { getCurrencySymbol } from '../lib/currency-utils';
 import { useAuth } from '../contexts/AuthContext';
+import { useCurrencyFormatter } from '../lib/currency-utils'; // Inject the dynamic currency hook
 
 type Account = Database['public']['Tables']['accounts']['Row'];
 
@@ -14,17 +14,15 @@ interface AccountBalance {
   balance: number;
 }
 
-interface Currency {
-  id: string;
-  code: string;
-  name: string;
-}
-
 export default function TransferForm() {
   const navigate = useNavigate();
   const { slug } = useParams<{ slug: string }>();
   const p = (path: string) => `/${slug}${path}`;
   const { userProfile, companyId } = useAuth();
+  
+  // Bring in the dynamic active currencies and the symbol formatter from global state
+  const { activeCurrencies, getSymbol } = useCurrencyFormatter();
+
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [fromAccountId, setFromAccountId] = useState('');
   const [toAccountId, setToAccountId] = useState('');
@@ -35,12 +33,17 @@ export default function TransferForm() {
   const [notes, setNotes] = useState('');
   const [loading, setLoading] = useState(false);
   const [accountBalances, setAccountBalances] = useState<Record<string, AccountBalance[]>>({});
-  const [currencies, setCurrencies] = useState<Currency[]>([]);
 
   useEffect(() => {
     loadAccounts();
-    loadCurrencies();
   }, []);
+
+  // Safely set the default currency once activeCurrencies load
+  useEffect(() => {
+    if (activeCurrencies && activeCurrencies.length > 0 && !currency) {
+      setCurrency(activeCurrencies[0].code);
+    }
+  }, [activeCurrencies, currency]);
 
   const loadAccounts = async () => {
     try {
@@ -74,24 +77,6 @@ export default function TransferForm() {
     }
   };
 
-  const loadCurrencies = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('currencies')
-        .select('id, code, name')
-        .eq('is_active', true)
-        .order('code');
-
-      if (error) throw error;
-      setCurrencies(data || []);
-      if (data && data.length > 0 && !currency) {
-        setCurrency(data[0].code);
-      }
-    } catch (error) {
-      console.error('Error loading currencies:', error);
-    }
-  };
-
   const getAccountBalance = (accountId: string, curr: string): number => {
     const balances = accountBalances[accountId] || [];
     const balance = balances.find(b => b.currency === curr);
@@ -119,7 +104,7 @@ export default function TransferForm() {
 
     const fromBalance = getAccountBalance(fromAccountId, currency);
     if (transferAmount > fromBalance) {
-      alert(`Insufficient funds. Available balance: ${getCurrencySymbol(currency)}${fromBalance.toFixed(2)}`);
+      alert(`Insufficient funds. Available balance: ${getSymbol(currency)}${fromBalance.toFixed(2)}`);
       return;
     }
 
@@ -206,7 +191,7 @@ export default function TransferForm() {
                     {accountBalances[fromAccount.id].map((bal, idx) => (
                       <span key={bal.currency}>
                         {idx > 0 && ', '}
-                        {getCurrencySymbol(bal.currency)}{bal.balance.toFixed(2)} {bal.currency}
+                        {getSymbol(bal.currency)}{bal.balance.toFixed(2)} {bal.currency}
                       </span>
                     ))}
                   </div>
@@ -238,7 +223,7 @@ export default function TransferForm() {
                     {accountBalances[toAccount.id].map((bal, idx) => (
                       <span key={bal.currency}>
                         {idx > 0 && ', '}
-                        {getCurrencySymbol(bal.currency)}{bal.balance.toFixed(2)} {bal.currency}
+                        {getSymbol(bal.currency)}{bal.balance.toFixed(2)} {bal.currency}
                       </span>
                     ))}
                   </div>
@@ -260,7 +245,7 @@ export default function TransferForm() {
                       required
                     >
                       <option value="">Select currency</option>
-                      {currencies.map((curr) => (
+                      {activeCurrencies.map((curr) => (
                         <option key={curr.code} value={curr.code}>
                           {curr.code} - {curr.name}
                         </option>
@@ -284,7 +269,7 @@ export default function TransferForm() {
                     />
                     {fromAccountId && (
                       <p className="mt-2 text-sm text-gray-600">
-                        Available: {getCurrencySymbol(currency)}{fromBalance.toFixed(2)}
+                        Available: {getSymbol(currency)}{fromBalance.toFixed(2)}
                       </p>
                     )}
                   </div>
