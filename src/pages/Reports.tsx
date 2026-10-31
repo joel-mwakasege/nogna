@@ -2354,7 +2354,7 @@ export default function Reports() {
                         variant="secondary"
                         onClick={(e) => {
                           e.stopPropagation();
-                          exportInvoicesToCSV(documentData);
+                          exportInvoicesToExcel(documentData);
                         }}
                       >
                         <Download className="w-4 h-4 mr-1" />
