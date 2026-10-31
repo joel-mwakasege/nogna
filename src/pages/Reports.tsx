@@ -25,6 +25,7 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { Button } from '../components/Button';
 import { formatCurrency } from '../lib/currency-utils';
+import { exportInvoiceWorkbook } from '../lib/excel-report';
 
 interface RevenueByPeriod {
   year: number;
@@ -1322,33 +1323,100 @@ export default function Reports() {
     }, 400);
   };
 
-  const exportInvoicesToCSV = (data: DocumentTotal[]) => {
+  const fetchInvoiceRegisterForExport = async (): Promise<DocumentTotal[]> => {
+    if (!companyId) return [];
+
+    let query = supabase
+      .from('document_totals_view')
+      .select('*')
+      .eq('document_type', 'invoice')
+      .eq('company_id', companyId)
+      .order('issue_date', { ascending: true });
+
+    if (selectedCurrency !== 'all') {
+      query = query.eq('currency', selectedCurrency);
+    }
+
+    const { data, error } = await query;
+    if (error || !data) {
+      console.error('Error loading invoice register for Excel export:', error);
+      return [];
+    }
+
+    const documentIds = (data as any[]).map(d => d.document_id || d.id).filter(Boolean);
+    const customFieldsMap: Record<string, { project?: string; location?: string }> = {};
+    const paymentsMap: Record<string, number> = {};
+    const docNumberMap: Record<string, string> = {};
+
+    if (documentIds.length > 0) {
+      const [{ data: rawDocs }, { data: customFields }, { data: payments }] = await Promise.all([
+        supabase
+          .from('documents')
+          .select('id, document_number, invoice_number, number, doc_number, prefix')
+          .in('id', documentIds),
+        supabase
+          .from('client_custom_fields')
+          .select('document_id, field_label, field_value')
+          .in('document_id', documentIds),
+        supabase
+          .from('payments')
+          .select('document_id, amount')
+          .in('document_id', documentIds)
+          .is('deleted_at', null)
+      ]);
+
+      (rawDocs || []).forEach((d: any) => {
+        let num = d.document_number || d.invoice_number || d.number || d.doc_number || '';
+        if (d.prefix && num && !String(num).startsWith(d.prefix)) num = `${d.prefix}${num}`;
+        if (num) docNumberMap[d.id] = String(num);
+      });
+
+      (customFields || []).forEach((field: any) => {
+        const label = String(field.field_label || '').trim().toLowerCase();
+        if (!customFieldsMap[field.document_id]) customFieldsMap[field.document_id] = {};
+        if (['project/events', 'project/event', 'project', 'event'].includes(label)) {
+          customFieldsMap[field.document_id].project = field.field_value || '';
+        } else if (label === 'location') {
+          customFieldsMap[field.document_id].location = field.field_value || '';
+        }
+      });
+
+      (payments || []).forEach((payment: any) => {
+        paymentsMap[payment.document_id] = (paymentsMap[payment.document_id] || 0) + Number(payment.amount);
+      });
+    }
+
+    return (data as any[]).map(doc => {
+      const docId = doc.document_id || doc.id;
+      const paid = paymentsMap[docId] || 0;
+      return {
+        ...doc,
+        document_id: docId,
+        document_number: docNumberMap[docId] || doc.document_number || '—',
+        project_events: customFieldsMap[docId]?.project || '',
+        location: customFieldsMap[docId]?.location || '',
+        paid,
+        balance: Number(doc.total_amount || 0) - paid
+      } as DocumentTotal;
+    });
+  };
+
+  const exportInvoicesToExcel = async (data: DocumentTotal[]) => {
     if (data.length === 0) return;
-    const headers = ['Invoice date', 'Currency', 'Company/client', 'Project/Events', 'Location', 'Invoice number', 'Subtotal (Excl. VAT)', 'Tax rate(VAT)', 'VAT Amount', 'Total Amount (Incl. VAT)', 'Paid', 'Balance', 'Status'];
-    const rows = data.map(item => [
-      formatDate(item.issue_date),
-      item.currency,
-      `"${item.customer_name}"`,
-      `"${item.project_events || ''}"`,
-      `"${item.location || ''}"`,
-      (item as any).document_number || (item as any).invoice_number || (item as any).number || '—',
-      item.subtotal || 0,
-      `${(item.tax_percent || 0).toFixed(2)}%`,
-      item.tax_amount || 0,
-      item.total_amount,
-      item.paid,
-      item.balance,
-      mapStatus(item.status)
-    ]);
-    const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `monthly-invoices-${dateFrom}-to-${dateTo}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+
+    try {
+      const allInvoices = await fetchInvoiceRegisterForExport();
+      await exportInvoiceWorkbook({
+        allInvoices,
+        monthlyInvoices: [...data].sort((a, b) => a.issue_date.localeCompare(b.issue_date)),
+        dateFrom,
+        dateTo,
+        companyName: companySettings?.company_name || 'Kilimanjaro Audio Visual Services'
+      });
+    } catch (error) {
+      console.error('Excel export failed:', error);
+      alert('Unable to create the Excel report. Please try again.');
+    }
   };
 
   const exportPaymentsToCSV = (data: PaymentLogEntry[]) => {
@@ -2026,7 +2094,7 @@ export default function Reports() {
                         variant="secondary"
                         onClick={(e) => {
                           e.stopPropagation();
-                          exportInvoicesToCSV(documentData);
+                          exportInvoicesToExcel(documentData);
                         }}
                       >
                         <Download className="w-4 h-4 mr-1" />
@@ -2286,7 +2354,7 @@ export default function Reports() {
                         variant="secondary"
                         onClick={(e) => {
                           e.stopPropagation();
-                          exportInvoicesToCSV(documentData);
+                          exportInvoicesToExcel(documentData);
                         }}
                       >
                         <Download className="w-4 h-4 mr-1" />
