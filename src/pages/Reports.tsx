@@ -1396,7 +1396,7 @@ export default function Reports() {
         project_events: customFieldsMap[docId]?.project || '',
         location: customFieldsMap[docId]?.location || '',
         paid,
-        balance: Math.max(0, Number(doc.total_amount || 0) - paid)
+        balance: Number(doc.total_amount || 0) - paid
       } as DocumentTotal;
     });
   };
