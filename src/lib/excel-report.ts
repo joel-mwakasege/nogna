@@ -59,7 +59,7 @@ const applyBorder = (cell: ExcelJS.Cell) => {
 
 const styleTitle = (sheet: ExcelJS.Worksheet, range: string, text: string) => {
   sheet.mergeCells(range);
-  const cell = sheet.getCell(range.split(':')[0]);
+  const cell = sheet.getCell(range.split(':')[0] || 'A1');
   cell.value = text;
   cell.font = { name: 'Arial', size: 16, bold: true, color: { argb: WHITE } };
   cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: NAVY } };
