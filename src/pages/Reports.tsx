@@ -1621,9 +1621,9 @@ export default function Reports() {
               </div>
 
               <div className="flex gap-2 w-full sm:w-auto">
-                <Button onClick={exportFullStatementCSV} variant="secondary" className="flex-1 sm:flex-initial">
+                <Button onClick={() => exportInvoicesToExcel(documentData)} variant="secondary" className="flex-1 sm:flex-initial">
                   <FileSpreadsheet className="w-4 h-4 mr-1.5 text-emerald-600" />
-                  Excel / CSV
+                  Export Excel
                 </Button>
                 <Button onClick={exportStatementPDF} variant="primary" className="flex-1 sm:flex-initial">
                   <Printer className="w-4 h-4 mr-1.5" />
