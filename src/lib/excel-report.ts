@@ -16,7 +16,24 @@ export interface InvoiceExcelRow {
   status: string;
 }
 
+export interface FinancialStatementExcel {
+  currency: string;
+  totalSalesRevenue: number;
+  totalCollected: number;
+  totalUnpaid: number;
+  cogsBreakdown: Record<string, number>;
+  totalCOGS: number;
+  grossProfit: number;
+  operatingBreakdown: Record<string, number>;
+  totalOperating: number;
+  adminBreakdown: Record<string, number>;
+  totalAdmin: number;
+  totalExpenses: number;
+  profitBeforeTax: number;
+}
+
 interface ExportOptions {
+  statements: FinancialStatementExcel[];
   allInvoices: InvoiceExcelRow[];
   monthlyInvoices: InvoiceExcelRow[];
   dateFrom: string;
@@ -106,7 +123,7 @@ const styleBody = (sheet: ExcelJS.Worksheet, firstRow: number, lastRow: number, 
 };
 
 export async function exportInvoiceWorkbook(options: ExportOptions) {
-  const { allInvoices, monthlyInvoices, dateFrom, dateTo, companyName } = options;
+  const { statements, allInvoices, monthlyInvoices, dateFrom, dateTo, companyName } = options;
   const workbook = new ExcelJS.Workbook();
   workbook.creator = 'Nogna';
   workbook.company = companyName || 'Kilimanjaro Audio Visual Services';
@@ -114,7 +131,80 @@ export async function exportInvoiceWorkbook(options: ExportOptions) {
 
   const company = (companyName || 'KILIMANJARO AUDIO VISUAL SERVICES').toUpperCase();
 
-  // Sheet 1: master invoice register
+  // Sheet 1: selected-period income statement, matching the KAVS workbook structure
+  const income = workbook.addWorksheet('Income Statement', {
+    views: [{ state: 'frozen', ySplit: 4 }],
+    pageSetup: { orientation: 'portrait', fitToPage: true, fitToWidth: 1, fitToHeight: 0 },
+  });
+  income.columns = [{ width: 4 }, { width: 38 }, { width: 20 }, { width: 20 }];
+  styleTitle(income, 'B1:D1', company);
+  income.mergeCells('B2:D2');
+  income.getCell('B2').value = `PROFIT AND LOSS STATEMENT — ${dateFrom} to ${dateTo}`;
+  income.getCell('B2').font = { name: 'Arial', size: 12, bold: true, color: { argb: NAVY } };
+  income.getCell('B2').alignment = { horizontal: 'center' };
+
+  const addStatementRow = (label: string, value?: number, bold = false, fill?: string) => {
+    const row = income.addRow(['', label, value ?? '', '']);
+    row.height = 22;
+    const labelCell = row.getCell(2);
+    const valueCell = row.getCell(3);
+    labelCell.font = { name: 'Arial', size: 10, bold, color: { argb: DARK } };
+    valueCell.font = { name: 'Arial', size: 10, bold, color: { argb: DARK } };
+    valueCell.numFmt = moneyFormat;
+    valueCell.alignment = { horizontal: 'right' };
+    if (fill) {
+      for (let col = 2; col <= 3; col += 1) {
+        row.getCell(col).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: fill } };
+      }
+    }
+    return row;
+  };
+
+  statements.forEach((stat, statementIndex) => {
+    if (statementIndex > 0) income.addRow([]);
+    const currencyHeader = income.addRow(['', `PROFIT AND LOSS STATEMENT (${stat.currency})`, 'ACTUAL', '']);
+    for (let col = 2; col <= 3; col += 1) {
+      const cell = currencyHeader.getCell(col);
+      cell.font = { name: 'Arial', size: 11, bold: true, color: { argb: WHITE } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: NAVY } };
+      applyBorder(cell);
+    }
+
+    addStatementRow('REVENUE', undefined, true, LIGHT_BLUE);
+    addStatementRow('Sales Revenue', stat.totalSalesRevenue);
+    addStatementRow('Total Revenue', stat.totalSalesRevenue, true);
+    income.addRow([]);
+
+    addStatementRow('COST OF GOODS SOLD', undefined, true, LIGHT_BLUE);
+    Object.entries(stat.cogsBreakdown).filter(([, value]) => Number(value) !== 0).forEach(([label, value]) => addStatementRow(label, Number(value)));
+    addStatementRow('Total COGS', stat.totalCOGS, true);
+    income.addRow([]);
+
+    addStatementRow('GROSS PROFIT', stat.grossProfit, true, PAID_GREEN);
+    income.addRow([]);
+
+    addStatementRow('OPERATING EXPENSES', undefined, true, LIGHT_BLUE);
+    Object.entries(stat.operatingBreakdown).filter(([, value]) => Number(value) !== 0).forEach(([label, value]) => addStatementRow(label, Number(value)));
+    addStatementRow('Total Operating Expenses', stat.totalOperating, true);
+    income.addRow([]);
+
+    addStatementRow('ADMINISTRATIVE & TAX EXPENSES', undefined, true, LIGHT_BLUE);
+    Object.entries(stat.adminBreakdown).filter(([, value]) => Number(value) !== 0).forEach(([label, value]) => addStatementRow(label, Number(value)));
+    addStatementRow('Total Administrative Expenses', stat.totalAdmin, true);
+    addStatementRow('Total Operating & Admin Expenses', stat.totalExpenses, true);
+    income.addRow([]);
+
+    addStatementRow('PROFIT BEFORE TAX', stat.profitBeforeTax, true, stat.profitBeforeTax >= 0 ? PAID_GREEN : 'FFCCCC');
+    income.addRow([]);
+
+    addStatementRow('ACCOUNTS RECEIVABLE SUMMARY', undefined, true, LIGHT_BLUE);
+    const invoiceTotals = totalsByCurrency(monthlyInvoices).find(([currency]) => currency === stat.currency)?.[1];
+    addStatementRow('Total Billed (Incl. VAT)', invoiceTotals?.total || 0);
+    addStatementRow('Paid', stat.totalCollected);
+    addStatementRow('Unpaid', stat.totalUnpaid, true);
+  });
+
+  // Sheet 2: master invoice register
   const main = workbook.addWorksheet('Invoice Main', {
     views: [{ state: 'frozen', ySplit: 5 }],
     pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 },
@@ -174,7 +264,7 @@ export async function exportInvoiceWorkbook(options: ExportOptions) {
     });
   });
 
-  // Sheet 2: selected month/date-range ledger
+  // Sheet 3: selected month/date-range ledger
   const ledger = workbook.addWorksheet('Sales Ledger', {
     views: [{ state: 'frozen', ySplit: 6 }],
     pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 },
@@ -267,7 +357,7 @@ export async function exportInvoiceWorkbook(options: ExportOptions) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `invoice-report-${dateFrom}-to-${dateTo}.xlsx`;
+  a.download = `financial-report-${dateFrom}-to-${dateTo}.xlsx`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);

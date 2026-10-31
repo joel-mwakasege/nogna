@@ -1407,6 +1407,9 @@ export default function Reports() {
     try {
       const allInvoices = await fetchInvoiceRegisterForExport();
       await exportInvoiceWorkbook({
+        statements: activeCurrenciesInPeriod
+          .map(currency => financialsByCurrency[currency])
+          .filter((statement): statement is CurrencyFinancialStatement => Boolean(statement)),
         allInvoices,
         monthlyInvoices: [...data].sort((a, b) => a.issue_date.localeCompare(b.issue_date)),
         dateFrom,
