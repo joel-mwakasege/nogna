@@ -35,6 +35,21 @@ const DARK = '1C1C1C';
 const moneyFormat = '#,##0.00;[Red]-#,##0.00;-';
 const dateFormat = 'mmm d, yyyy';
 
+const totalsByCurrency = (rows: InvoiceExcelRow[]) => {
+  const totals = new Map<string, { subtotal: number; vat: number; total: number; paid: number; balance: number }>();
+  rows.forEach(row => {
+    const currency = row.currency || 'N/A';
+    const current = totals.get(currency) || { subtotal: 0, vat: 0, total: 0, paid: 0, balance: 0 };
+    current.subtotal += Number(row.subtotal || 0);
+    current.vat += Number(row.tax_amount || 0);
+    current.total += Number(row.total_amount || 0);
+    current.paid += Number(row.paid || 0);
+    current.balance += Number(row.balance || 0);
+    totals.set(currency, current);
+  });
+  return [...totals.entries()].sort(([a], [b]) => a.localeCompare(b));
+};
+
 const toExcelDate = (value: string) => {
   const date = new Date(value + (value.length === 10 ? 'T00:00:00' : ''));
   return Number.isNaN(date.getTime()) ? value : date;
@@ -142,19 +157,15 @@ export async function exportInvoiceWorkbook(options: ExportOptions) {
   if (mainLast >= mainFirst) styleBody(main, mainFirst, mainLast, 12);
   main.autoFilter = { from: 'A5', to: `L${mainLast}` };
 
-  const mainTotalsRow = main.addRow(['','','','','','TOTALS',
-    { formula: `SUM(G${mainFirst}:G${mainLast})` },
-    { formula: `SUM(H${mainFirst}:H${mainLast})` },
-    { formula: `SUM(I${mainFirst}:I${mainLast})` },
-    { formula: `SUM(J${mainFirst}:J${mainLast})` },
-    { formula: `SUM(K${mainFirst}:K${mainLast})` }, ''
-  ]);
-  mainTotalsRow.height = 24;
-  mainTotalsRow.eachCell((cell, col) => {
-    cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: WHITE } };
-    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: NAVY } };
-    applyBorder(cell);
-    if (col >= 7 && col <= 11) cell.numFmt = moneyFormat;
+  totalsByCurrency(allInvoices).forEach(([currency, totals]) => {
+    const row = main.addRow(['','','','','',`TOTALS (${currency})`, totals.subtotal, totals.vat, totals.total, totals.paid, totals.balance, '']);
+    row.height = 24;
+    row.eachCell((cell, col) => {
+      cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: WHITE } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: NAVY } };
+      applyBorder(cell);
+      if (col >= 7 && col <= 11) cell.numFmt = moneyFormat;
+    });
   });
 
   // Sheet 2: selected month/date-range ledger
@@ -201,45 +212,42 @@ export async function exportInvoiceWorkbook(options: ExportOptions) {
   if (ledgerLast >= ledgerFirst) styleBody(ledger, ledgerFirst, ledgerLast, 10);
   ledger.autoFilter = { from: 'A6', to: `J${ledgerLast}` };
 
-  const ledgerTotals = ledger.addRow(['','','','TOTALS',
-    { formula: `SUM(E${ledgerFirst}:E${ledgerLast})` },
-    { formula: `SUM(F${ledgerFirst}:F${ledgerLast})` },
-    { formula: `SUM(G${ledgerFirst}:G${ledgerLast})` },
-    { formula: `SUM(H${ledgerFirst}:H${ledgerLast})` },
-    { formula: `SUM(I${ledgerFirst}:I${ledgerLast})` }, ''
-  ]);
-  ledgerTotals.height = 24;
-  ledgerTotals.eachCell((cell, col) => {
-    cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: WHITE } };
-    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: NAVY } };
-    applyBorder(cell);
-    if (col >= 5 && col <= 9) cell.numFmt = moneyFormat;
+  totalsByCurrency(monthlyInvoices).forEach(([currency, totals]) => {
+    const row = ledger.addRow(['','','',`TOTALS (${currency})`, totals.subtotal, totals.vat, totals.total, totals.paid, totals.balance, '']);
+    row.height = 24;
+    row.eachCell((cell, col) => {
+      cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: WHITE } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: NAVY } };
+      applyBorder(cell);
+      if (col >= 5 && col <= 9) cell.numFmt = moneyFormat;
+    });
   });
 
-  // A small summary block makes the exported file immediately usable.
-  const summaryStart = ledgerTotals.number + 2;
+  const summaryStart = ledger.rowCount + 2;
   ledger.getCell(`D${summaryStart}`).value = 'PERIOD SUMMARY';
   ledger.getCell(`D${summaryStart}`).font = { name: 'Arial', bold: true, color: { argb: WHITE } };
   ledger.getCell(`D${summaryStart}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: NAVY } };
-  const summary = [
-    ['Total Invoiced', { formula: `SUM(G${ledgerFirst}:G${ledgerLast})` }],
-    ['Total Paid', { formula: `SUM(H${ledgerFirst}:H${ledgerLast})` }],
-    ['Outstanding', { formula: `SUM(I${ledgerFirst}:I${ledgerLast})` }],
-  ];
-  summary.forEach((item, index) => {
-    const r = summaryStart + 1 + index;
-    ledger.getCell(`D${r}`).value = item[0] as string;
-    ledger.getCell(`E${r}`).value = item[1] as ExcelJS.CellValue;
-    ledger.getCell(`E${r}`).numFmt = moneyFormat;
-    for (let c = 4; c <= 5; c += 1) {
-      const cell = ledger.getRow(r).getCell(c);
+  totalsByCurrency(monthlyInvoices).forEach(([currency, totals], index) => {
+    const rowNumber = summaryStart + 1 + index;
+    ledger.getCell(`D${rowNumber}`).value = currency;
+    ledger.getCell(`E${rowNumber}`).value = totals.total;
+    ledger.getCell(`F${rowNumber}`).value = totals.paid;
+    ledger.getCell(`G${rowNumber}`).value = totals.balance;
+    for (let col = 4; col <= 7; col += 1) {
+      const cell = ledger.getRow(rowNumber).getCell(col);
       applyBorder(cell);
-      cell.font = { name: 'Arial', size: 10, bold: c === 4 };
-      if (index === 2) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: OPEN_YELLOW } };
-      else if (index === 1) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: PAID_GREEN } };
-      else cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: LIGHT_BLUE } };
+      cell.font = { name: 'Arial', size: 10, bold: col === 4 };
+      if (col >= 5) cell.numFmt = moneyFormat;
     }
   });
+  ledger.getCell(`E${summaryStart}`).value = 'INVOICED';
+  ledger.getCell(`F${summaryStart}`).value = 'PAID';
+  ledger.getCell(`G${summaryStart}`).value = 'BALANCE';
+  for (let col = 5; col <= 7; col += 1) {
+    const cell = ledger.getRow(summaryStart).getCell(col);
+    cell.font = { name: 'Arial', bold: true, color: { argb: WHITE } };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: NAVY } };
+  }
 
   const buffer = await workbook.xlsx.writeBuffer();
   const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
