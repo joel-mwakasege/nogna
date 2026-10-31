@@ -64,7 +64,7 @@ const styleTitle = (sheet: ExcelJS.Worksheet, range: string, text: string) => {
   cell.font = { name: 'Arial', size: 16, bold: true, color: { argb: WHITE } };
   cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: NAVY } };
   cell.alignment = { horizontal: 'center', vertical: 'middle' };
-  sheet.getRow(cell.row).height = 26;
+  sheet.getRow(Number(cell.row)).height = 26;
 };
 
 const styleHeaderRow = (row: ExcelJS.Row) => {
