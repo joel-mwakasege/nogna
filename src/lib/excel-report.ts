@@ -154,7 +154,13 @@ export async function exportInvoiceWorkbook(options: ExportOptions) {
   });
   const mainFirst = 6;
   const mainLast = Math.max(5, main.rowCount);
-  if (mainLast >= mainFirst) styleBody(main, mainFirst, mainLast, 12);
+  if (mainLast >= mainFirst) {
+    styleBody(main, mainFirst, mainLast, 12);
+    for (let r = mainFirst; r <= mainLast; r += 1) {
+      const status = main.getRow(r).getCell(12);
+      status.font = { name: 'Arial', size: 10, bold: true, color: { argb: DARK } };
+    }
+  }
   main.autoFilter = { from: 'A5', to: `L${mainLast}` };
 
   totalsByCurrency(allInvoices).forEach(([currency, totals]) => {
@@ -209,7 +215,13 @@ export async function exportInvoiceWorkbook(options: ExportOptions) {
   });
   const ledgerFirst = 7;
   const ledgerLast = Math.max(6, ledger.rowCount);
-  if (ledgerLast >= ledgerFirst) styleBody(ledger, ledgerFirst, ledgerLast, 10);
+  if (ledgerLast >= ledgerFirst) {
+    styleBody(ledger, ledgerFirst, ledgerLast, 10);
+    for (let r = ledgerFirst; r <= ledgerLast; r += 1) {
+      const remarks = ledger.getRow(r).getCell(10);
+      remarks.font = { name: 'Arial', size: 10, bold: true, color: { argb: DARK } };
+    }
+  }
   ledger.autoFilter = { from: 'A6', to: `J${ledgerLast}` };
 
   totalsByCurrency(monthlyInvoices).forEach(([currency, totals]) => {
@@ -243,10 +255,11 @@ export async function exportInvoiceWorkbook(options: ExportOptions) {
   ledger.getCell(`E${summaryStart}`).value = 'INVOICED';
   ledger.getCell(`F${summaryStart}`).value = 'PAID';
   ledger.getCell(`G${summaryStart}`).value = 'BALANCE';
-  for (let col = 5; col <= 7; col += 1) {
+  for (let col = 4; col <= 7; col += 1) {
     const cell = ledger.getRow(summaryStart).getCell(col);
     cell.font = { name: 'Arial', bold: true, color: { argb: WHITE } };
     cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: NAVY } };
+    applyBorder(cell);
   }
 
   const buffer = await workbook.xlsx.writeBuffer();
