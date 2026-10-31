@@ -5,16 +5,32 @@ on:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: feature/formatted-monthly-excel-report
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-      - name: Install dependencies
+      - name: Synchronize lockfile
+        run: npm install --package-lock-only --ignore-scripts
+      - name: Commit generated lockfile when needed
+        run: |
+          if ! git diff --quiet -- package-lock.json; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add package-lock.json
+            git commit -m "Sync package lock for ExcelJS"
+            git push
+          fi
+      - name: Clean install
         run: npm ci --ignore-scripts
       - name: Production build
         run: npm run build
