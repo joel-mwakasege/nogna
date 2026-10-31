@@ -231,7 +231,6 @@ export async function exportInvoiceWorkbook(options: ExportOptions) {
     ledger.getCell(`D${r}`).value = item[0] as string;
     ledger.getCell(`E${r}`).value = item[1] as ExcelJS.CellValue;
     ledger.getCell(`E${r}`).numFmt = moneyFormat;
-    ledger.getRange?.;
     for (let c = 4; c <= 5; c += 1) {
       const cell = ledger.getRow(r).getCell(c);
       applyBorder(cell);
