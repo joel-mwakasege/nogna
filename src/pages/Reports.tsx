@@ -1422,66 +1422,24 @@ export default function Reports() {
     }
   };
 
-  const exportInvoiceRegisterToExcel = async (data: DocumentTotal[]) => {
-    if (data.length === 0) return;
+  const downloadReportCSV = (
+    filename: string,
+    headers: string[],
+    rows: Array<Array<string | number>>
+  ) => {
+    if (rows.length === 0) return;
 
-    try {
-      const allInvoices = await fetchInvoiceRegisterForExport();
-      await exportInvoiceWorkbook({
-        statements: [],
-        allInvoices,
-        monthlyInvoices: [...data].sort((a, b) => a.issue_date.localeCompare(b.issue_date)),
-        dateFrom,
-        dateTo,
-        companyName: companySettings?.company_name || 'Kilimanjaro Audio Visual Services'
-      });
-    } catch (error) {
-      console.error('Invoice Excel export failed:', error);
-      alert('Unable to create the invoice Excel report. Please try again.');
-    }
-  };
+    const escapeCsv = (value: string | number) => {
+      const text = String(value ?? '');
+      return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+    };
 
-  const exportPaymentsToCSV = (data: PaymentLogEntry[]) => {
-    if (data.length === 0) return;
-    const headers = ['Payment Date', 'Currency', 'Invoice Number', 'Company/Client', 'Account Received', 'Method', 'Reference', 'Notes', 'Amount'];
-    const rows = data.map(item => [
-      new Date(item.payment_date).toLocaleDateString(),
-      item.currency,
-      item.document_number,
-      `"${item.customer_name}"`,
-      `"${item.account_name}"`,
-      item.payment_method,
-      `"${item.reference_number || ''}"`,
-      `"${item.notes || ''}"`,
-      item.amount
-    ]);
-    const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `payments-received-${dateFrom}-to-${dateTo}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-  };
-
-  const exportToCSV = (data: any[], filename: string) => {
-    if (data.length === 0) return;
-    const headers = Object.keys(data[0]);
     const csvContent = [
-      headers.join(','),
-      ...data.map(row =>
-        headers.map(header => {
-          const value = row[header];
-          if (value === null || value === undefined) return '';
-          const stringValue = String(value);
-          return stringValue.includes(',') ? `"${stringValue}"` : stringValue;
-        }).join(',')
-      )
+      headers.map(escapeCsv).join(','),
+      ...rows.map(row => row.map(escapeCsv).join(','))
     ].join('\n');
 
-    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -1489,7 +1447,139 @@ export default function Reports() {
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
   };
+
+  const exportProfitLossReport = () => downloadReportCSV(
+    'profit-and-loss',
+    ['Period', 'Currency', 'Revenue (Excl. VAT)', 'Expenses', 'Net Profit'],
+    profitLossData.map(item => [
+      new Date(item.year, item.month - 1).toLocaleDateString('en-US', { year: 'numeric', month: 'long' }),
+      item.currency,
+      Number(item.total_revenue),
+      Number(item.total_expenses),
+      Number(item.net_profit)
+    ])
+  );
+
+  const exportNetVatReport = () => downloadReportCSV(
+    'net-vat-summary',
+    ['Period', 'Currency', 'Output VAT (Collected)', 'Input VAT (Paid)', 'Net Payable / (Refundable)'],
+    netVatData.map(item => [
+      new Date(item.year, item.month - 1).toLocaleDateString('en-US', { year: 'numeric', month: 'long' }),
+      item.currency,
+      Number(item.total_output_vat),
+      Number(item.total_input_vat),
+      Number(item.net_vat_payable)
+    ])
+  );
+
+  const exportVatAuditReport = () => downloadReportCSV(
+    'vat-audit',
+    ['Invoice Date', 'Currency', 'Invoice #', 'Client', 'Subtotal (Excl. VAT)', 'VAT %', 'VAT Amount (Output VAT)'],
+    documentData.map(item => [
+      item.issue_date,
+      item.currency,
+      item.document_number,
+      item.customer_name,
+      Number(item.subtotal || 0),
+      Number(item.tax_percent || 0),
+      Number(item.tax_amount || 0)
+    ])
+  );
+
+  const exportRevenueReport = () => downloadReportCSV(
+    'revenue-by-period',
+    ['Period', 'Currency', 'Invoices Count', 'Total Revenue (Excl. VAT)'],
+    revenueData.map(item => [
+      new Date(item.year, item.month - 1).toLocaleDateString('en-US', { year: 'numeric', month: 'long' }),
+      item.currency,
+      item.document_count,
+      Number(item.total_revenue)
+    ])
+  );
+
+  const exportCustomerArReport = () => downloadReportCSV(
+    'customer-ar-breakdown',
+    ['Customer', 'Email', 'Currency', 'Total Invoices', 'Paid Invoices', 'Total Paid', 'Outstanding', 'Last Invoice'],
+    customerData.map(item => [
+      item.customer_name,
+      item.customer_email || '',
+      item.currency || '',
+      item.total_invoices,
+      item.paid_invoices,
+      Number(item.total_paid),
+      Number(item.total_outstanding),
+      item.last_invoice_date || ''
+    ])
+  );
+
+  const exportOutstandingInvoicesReport = () => downloadReportCSV(
+    'outstanding-invoices',
+    ['Invoice #', 'Customer', 'Currency', 'Issue Date', 'Days Due', 'Amount Due', 'Paid', 'Balance Due'],
+    outstandingData.map(item => [
+      item.document_number || '',
+      item.customer_name,
+      item.currency,
+      item.issue_date,
+      item.days_outstanding,
+      Number(item.amount_due),
+      Number(item.amount_paid),
+      Number(item.balance_due)
+    ])
+  );
+
+  const exportMonthlyInvoiceReportToCSV = (data: DocumentTotal[]) => {
+    if (data.length === 0) return;
+
+    const columns = [
+      ...(visibleColumns.invoiceList.invoiceDate ? [{ header: 'Invoice date', value: (item: DocumentTotal) => item.issue_date }] : []),
+      { header: 'Currency', value: (item: DocumentTotal) => item.currency },
+      ...(visibleColumns.invoiceList.client ? [{ header: 'Company/client', value: (item: DocumentTotal) => item.customer_name }] : []),
+      ...(visibleColumns.invoiceList.project ? [{ header: 'Project/Events', value: (item: DocumentTotal) => item.project_events || '' }] : []),
+      ...(visibleColumns.invoiceList.location ? [{ header: 'Location', value: (item: DocumentTotal) => item.location || '' }] : []),
+      ...(visibleColumns.invoiceList.invoiceNumber ? [{ header: 'Invoice number', value: (item: DocumentTotal) => item.document_number }] : []),
+      ...(visibleColumns.invoiceList.taxRate ? [{ header: 'Tax rate(VAT)', value: (item: DocumentTotal) => Number(item.tax_percent || 0) }] : []),
+      ...(visibleColumns.invoiceList.totalAmount ? [{ header: 'Total (Incl. VAT)', value: (item: DocumentTotal) => Number(item.total_amount || 0) }] : []),
+      ...(visibleColumns.invoiceList.paid ? [{ header: 'Paid', value: (item: DocumentTotal) => Number(item.paid || 0) }] : []),
+      ...(visibleColumns.invoiceList.balance ? [{ header: 'Balance', value: (item: DocumentTotal) => Number(item.balance || 0) }] : []),
+      ...(visibleColumns.invoiceList.status ? [{ header: 'Status', value: (item: DocumentTotal) => mapStatus(item.status) }] : [])
+    ];
+
+    const escapeCsv = (value: string | number) => {
+      const text = String(value ?? '');
+      return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+    };
+
+    const csvContent = [
+      columns.map(column => escapeCsv(column.header)).join(','),
+      ...data.map(item => columns.map(column => escapeCsv(column.value(item))).join(','))
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `monthly-invoice-report-${dateFrom}-to-${dateTo}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
+  };
+
+  const exportPaymentsToCSV = (data: PaymentLogEntry[]) => downloadReportCSV(
+    'payments-received',
+    ['Date', 'Currency', 'Invoice #', 'Client', 'Account', 'Method', 'Amount'],
+    data.map(item => [
+      new Date(item.payment_date).toLocaleDateString(),
+      item.currency,
+      item.document_number,
+      item.customer_name,
+      item.account_name,
+      item.payment_method.replace('_', ' '),
+      Number(item.amount)
+    ])
+  );
 
   if (initialLoading) {
     return (
@@ -1990,7 +2080,7 @@ export default function Reports() {
                         variant="secondary"
                         onClick={(e) => {
                           e.stopPropagation();
-                          exportToCSV(profitLossData, 'profit-and-loss');
+                          exportProfitLossReport();
                         }}
                       >
                         <Download className="w-4 h-4 mr-1" />
@@ -2053,7 +2143,7 @@ export default function Reports() {
                         variant="secondary"
                         onClick={(e) => {
                           e.stopPropagation();
-                          exportToCSV(netVatData, 'net-vat-summary');
+                          exportNetVatReport();
                         }}
                       >
                         <Download className="w-4 h-4 mr-1" />
@@ -2116,7 +2206,7 @@ export default function Reports() {
                         variant="secondary"
                         onClick={(e) => {
                           e.stopPropagation();
-                          exportInvoiceRegisterToExcel(documentData);
+                          exportVatAuditReport();
                         }}
                       >
                         <Download className="w-4 h-4 mr-1" />
@@ -2187,7 +2277,7 @@ export default function Reports() {
                         variant="secondary"
                         onClick={(e) => {
                           e.stopPropagation();
-                          exportToCSV(revenueData, 'revenue-by-period');
+                          exportRevenueReport();
                         }}
                       >
                         <Download className="w-4 h-4 mr-1" />
@@ -2246,7 +2336,7 @@ export default function Reports() {
                         variant="secondary"
                         onClick={(e) => {
                           e.stopPropagation();
-                          exportToCSV(customerData, 'customer-revenue');
+                          exportCustomerArReport();
                         }}
                       >
                         <Download className="w-4 h-4 mr-1" />
@@ -2311,7 +2401,7 @@ export default function Reports() {
                         variant="secondary"
                         onClick={(e) => {
                           e.stopPropagation();
-                          exportToCSV(outstandingData, 'outstanding-invoices');
+                          exportOutstandingInvoicesReport();
                         }}
                       >
                         <Download className="w-4 h-4 mr-1" />
@@ -2376,7 +2466,7 @@ export default function Reports() {
                         variant="secondary"
                         onClick={(e) => {
                           e.stopPropagation();
-                          exportInvoicesToExcel(documentData);
+                          exportMonthlyInvoiceReportToCSV(documentData);
                         }}
                       >
                         <Download className="w-4 h-4 mr-1" />
