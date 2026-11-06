@@ -1422,6 +1422,25 @@ export default function Reports() {
     }
   };
 
+  const exportInvoiceRegisterToExcel = async (data: DocumentTotal[]) => {
+    if (data.length === 0) return;
+
+    try {
+      const allInvoices = await fetchInvoiceRegisterForExport();
+      await exportInvoiceWorkbook({
+        statements: [],
+        allInvoices,
+        monthlyInvoices: [...data].sort((a, b) => a.issue_date.localeCompare(b.issue_date)),
+        dateFrom,
+        dateTo,
+        companyName: companySettings?.company_name || 'Kilimanjaro Audio Visual Services'
+      });
+    } catch (error) {
+      console.error('Invoice Excel export failed:', error);
+      alert('Unable to create the invoice Excel report. Please try again.');
+    }
+  };
+
   const exportPaymentsToCSV = (data: PaymentLogEntry[]) => {
     if (data.length === 0) return;
     const headers = ['Payment Date', 'Currency', 'Invoice Number', 'Company/Client', 'Account Received', 'Method', 'Reference', 'Notes', 'Amount'];
@@ -2097,7 +2116,7 @@ export default function Reports() {
                         variant="secondary"
                         onClick={(e) => {
                           e.stopPropagation();
-                          exportInvoicesToExcel(documentData);
+                          exportInvoiceRegisterToExcel(documentData);
                         }}
                       >
                         <Download className="w-4 h-4 mr-1" />

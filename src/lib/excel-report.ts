@@ -204,6 +204,8 @@ export async function exportInvoiceWorkbook(options: ExportOptions) {
     addStatementRow('Unpaid', stat.totalUnpaid, true);
   });
 
+  if (statements.length === 0) workbook.removeWorksheet(income.id);
+
   // Sheet 2: master invoice register
   const main = workbook.addWorksheet('Invoice Main', {
     views: [{ state: 'frozen', ySplit: 5 }],
@@ -357,7 +359,9 @@ export async function exportInvoiceWorkbook(options: ExportOptions) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `financial-report-${dateFrom}-to-${dateTo}.xlsx`;
+  a.download = statements.length > 0
+    ? `financial-report-${dateFrom}-to-${dateTo}.xlsx`
+    : `invoice-report-${dateFrom}-to-${dateTo}.xlsx`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
