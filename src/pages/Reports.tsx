@@ -1422,23 +1422,39 @@ export default function Reports() {
     }
   };
 
-  const exportInvoiceRegisterToExcel = async (data: DocumentTotal[]) => {
+  const exportVatAuditToCSV = (data: DocumentTotal[]) => {
     if (data.length === 0) return;
 
-    try {
-      const allInvoices = await fetchInvoiceRegisterForExport();
-      await exportInvoiceWorkbook({
-        statements: [],
-        allInvoices,
-        monthlyInvoices: [...data].sort((a, b) => a.issue_date.localeCompare(b.issue_date)),
-        dateFrom,
-        dateTo,
-        companyName: companySettings?.company_name || 'Kilimanjaro Audio Visual Services'
-      });
-    } catch (error) {
-      console.error('Invoice Excel export failed:', error);
-      alert('Unable to create the invoice Excel report. Please try again.');
-    }
+    const headers = ['Invoice Date', 'Currency', 'Invoice #', 'Client', 'Subtotal (Excl. VAT)', 'VAT %', 'VAT Amount (Output VAT)'];
+    const rows = data.map(item => [
+      item.issue_date,
+      item.currency,
+      item.document_number,
+      item.customer_name,
+      Number(item.subtotal || 0),
+      Number(item.tax_percent || 0),
+      Number(item.tax_amount || 0)
+    ]);
+
+    const escapeCsv = (value: string | number) => {
+      const text = String(value ?? '');
+      return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+    };
+
+    const csvContent = [
+      headers.map(escapeCsv).join(','),
+      ...rows.map(row => row.map(escapeCsv).join(','))
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `vat-audit-${dateFrom}-to-${dateTo}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
   };
 
   const exportPaymentsToCSV = (data: PaymentLogEntry[]) => {
@@ -2116,7 +2132,7 @@ export default function Reports() {
                         variant="secondary"
                         onClick={(e) => {
                           e.stopPropagation();
-                          exportInvoiceRegisterToExcel(documentData);
+                          exportVatAuditToCSV(documentData);
                         }}
                       >
                         <Download className="w-4 h-4 mr-1" />
