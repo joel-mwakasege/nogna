@@ -1410,6 +1410,7 @@ export default function Reports() {
         statements: activeCurrenciesInPeriod
           .map(currency => financialsByCurrency[currency])
           .filter((statement): statement is CurrencyFinancialStatement => Boolean(statement)),
+        includeIncomeStatement: true,
         allInvoices,
         monthlyInvoices: [...data].sort((a, b) => a.issue_date.localeCompare(b.issue_date)),
         dateFrom,
@@ -1419,6 +1420,25 @@ export default function Reports() {
     } catch (error) {
       console.error('Excel export failed:', error);
       alert('Unable to create the Excel report. Please try again.');
+    }
+  };
+
+  const exportInvoiceRegisterToExcel = async (data: DocumentTotal[]) => {
+    if (data.length === 0) return;
+
+    try {
+      const allInvoices = await fetchInvoiceRegisterForExport();
+      await exportInvoiceWorkbook({
+        includeIncomeStatement: false,
+        allInvoices,
+        monthlyInvoices: [...data].sort((a, b) => a.issue_date.localeCompare(b.issue_date)),
+        dateFrom,
+        dateTo,
+        companyName: companySettings?.company_name || 'Kilimanjaro Audio Visual Services'
+      });
+    } catch (error) {
+      console.error('Invoice Excel export failed:', error);
+      alert('Unable to create the invoice Excel report. Please try again.');
     }
   };
 
@@ -2097,7 +2117,7 @@ export default function Reports() {
                         variant="secondary"
                         onClick={(e) => {
                           e.stopPropagation();
-                          exportInvoicesToExcel(documentData);
+                          exportInvoiceRegisterToExcel(documentData);
                         }}
                       >
                         <Download className="w-4 h-4 mr-1" />
@@ -2298,194 +2318,3 @@ export default function Reports() {
                         <Download className="w-4 h-4 mr-1" />
                         Export
                       </Button>
-                      {expandedSections['outstanding'] ? <ChevronUp className="w-5 h-5 text-gray-400" /> : <ChevronDown className="w-5 h-5 text-gray-400" />}
-                    </div>
-                  </div>
-
-                  {expandedSections['outstanding'] && (
-                    <div className="px-6 pb-6">
-                      <div className="overflow-x-auto">
-                        <table className="min-w-full divide-y divide-gray-200 text-xs">
-                          <thead className="bg-gray-50">
-                            <tr>
-                              <th className="px-3 py-2.5 text-left font-medium text-gray-500 uppercase">Invoice #</th>
-                              <th className="px-3 py-2.5 text-left font-medium text-gray-500 uppercase">Customer</th>
-                              <th className="px-3 py-2.5 text-left font-medium text-gray-500 uppercase">Curr</th>
-                              <th className="px-3 py-2.5 text-left font-medium text-gray-500 uppercase">Issue Date</th>
-                              <th className="px-3 py-2.5 text-right font-medium text-gray-500 uppercase">Days Due</th>
-                              <th className="px-3 py-2.5 text-right font-medium text-gray-500 uppercase">Amount Due</th>
-                              <th className="px-3 py-2.5 text-right font-medium text-gray-500 uppercase">Paid</th>
-                              <th className="px-3 py-2.5 text-right font-medium text-gray-500 uppercase">Balance Due</th>
-                            </tr>
-                          </thead>
-                          <tbody className="bg-white divide-y divide-gray-200">
-                            {outstandingData.map((item) => (
-                              <tr key={item.document_id} className="hover:bg-gray-50">
-                                <td className="px-3 py-2 font-medium text-blue-600">{(item as any).document_number || (item as any).invoice_number || (item as any).number || (item as any).invoice_no || '—'}</td>
-                                <td className="px-3 py-2 font-medium text-gray-900">{item.customer_name}</td>
-                                <td className="px-3 py-2 font-bold text-gray-500">{item.currency}</td>
-                                <td className="px-3 py-2 text-gray-600">{formatDate(item.issue_date)}</td>
-                                <td className="px-3 py-2 text-right text-gray-700">{item.days_outstanding}d</td>
-                                <td className="px-3 py-2 text-right font-medium text-gray-900">{formatCurrency(item.amount_due, item.currency)}</td>
-                                <td className="px-3 py-2 text-right text-emerald-600">{formatCurrency(item.amount_paid, item.currency)}</td>
-                                <td className="px-3 py-2 text-right font-bold text-amber-700">{formatCurrency(item.balance_due, item.currency)}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* 7. Monthly Invoice Report */}
-              {visibleSections.invoiceList && (
-                <div className="bg-white rounded-lg shadow">
-                  <div
-                    role="button"
-                    onClick={() => toggleSection('documents')}
-                    className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 cursor-pointer select-none"
-                  >
-                    <div className="flex items-center gap-3">
-                      <Calendar className="w-6 h-6 text-emerald-600" />
-                      <h2 className="text-xl font-semibold text-gray-900">Monthly Invoice Report</h2>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          exportInvoicesToExcel(documentData);
-                        }}
-                      >
-                        <Download className="w-4 h-4 mr-1" />
-                        Export
-                      </Button>
-                      {expandedSections['documents'] ? <ChevronUp className="w-5 h-5 text-gray-400" /> : <ChevronDown className="w-5 h-5 text-gray-400" />}
-                    </div>
-                  </div>
-
-                  {expandedSections['documents'] && (
-                    <div className="px-6 pb-6">
-                      <div className="overflow-x-auto">
-                        <table className="min-w-full divide-y divide-gray-200">
-                          <thead className="bg-gray-50">
-                            <tr>
-                              {visibleColumns.invoiceList.invoiceDate && <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Invoice date</th>}
-                              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Curr</th>
-                              {visibleColumns.invoiceList.client && <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Company/client</th>}
-                              {visibleColumns.invoiceList.project && <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Project/Events</th>}
-                              {visibleColumns.invoiceList.location && <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Location</th>}
-                              {visibleColumns.invoiceList.invoiceNumber && <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Invoice number</th>}
-                              {visibleColumns.invoiceList.taxRate && <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Tax rate(VAT)</th>}
-                              {visibleColumns.invoiceList.totalAmount && <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Total (Incl. VAT)</th>}
-                              {visibleColumns.invoiceList.paid && <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Paid</th>}
-                              {visibleColumns.invoiceList.balance && <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Balance</th>}
-                              {visibleColumns.invoiceList.status && <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>}
-                            </tr>
-                          </thead>
-                          <tbody className="bg-white divide-y divide-gray-200">
-                            {documentData.map((item) => (
-                              <tr key={item.document_id} className="hover:bg-gray-50">
-                                {visibleColumns.invoiceList.invoiceDate && <td className="px-4 py-3 text-sm text-gray-900 whitespace-nowrap">{formatDate(item.issue_date)}</td>}
-                                <td className="px-4 py-3 text-sm font-bold text-gray-500">{item.currency}</td>
-                                {visibleColumns.invoiceList.client && <td className="px-4 py-3 text-sm text-gray-900">{item.customer_name}</td>}
-                                {visibleColumns.invoiceList.project && <td className="px-4 py-3 text-sm text-gray-900">{item.project_events || '—'}</td>}
-                                {visibleColumns.invoiceList.location && <td className="px-4 py-3 text-sm text-gray-900">{item.location || '—'}</td>}
-                                {visibleColumns.invoiceList.invoiceNumber && <td className="px-4 py-3 text-sm text-blue-600 font-medium">{item.document_number}</td>}
-                                {visibleColumns.invoiceList.taxRate && <td className="px-4 py-3 text-sm text-gray-900 whitespace-nowrap">{(item.tax_percent || 0).toFixed(2)}%</td>}
-                                {visibleColumns.invoiceList.totalAmount && <td className="px-4 py-3 text-sm text-right text-gray-900 font-medium">{formatCurrency(item.total_amount, item.currency)}</td>}
-                                {visibleColumns.invoiceList.paid && <td className="px-4 py-3 text-sm text-right text-emerald-600 font-medium">{formatCurrency(item.paid || 0, item.currency)}</td>}
-                                {visibleColumns.invoiceList.balance && <td className="px-4 py-3 text-sm text-right font-semibold text-amber-600">{formatCurrency(item.balance || 0, item.currency)}</td>}
-                                {visibleColumns.invoiceList.status && (
-                                  <td className="px-4 py-3 text-sm whitespace-nowrap">
-                                    <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${
-                                      item.status === 'paid' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
-                                      item.status === 'partially_paid' ? 'bg-amber-50 text-amber-700 border border-amber-200' :
-                                      'bg-red-50 text-red-700 border border-red-200'
-                                    }`}>
-                                      {mapStatus(item.status)}
-                                    </span>
-                                  </td>
-                                )}
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* 8. Payments Received Log */}
-              {visibleSections.paymentsLog && (
-                <div className="bg-white rounded-lg shadow">
-                  <div
-                    role="button"
-                    onClick={() => toggleSection('paymentsLog')}
-                    className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 cursor-pointer select-none"
-                  >
-                    <div className="flex items-center gap-3">
-                      <DollarSign className="w-6 h-6 text-emerald-600" />
-                      <h2 className="text-xl font-semibold text-gray-900">Payments Received Log</h2>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          exportPaymentsToCSV(paymentsLogData);
-                        }}
-                      >
-                        <Download className="w-4 h-4 mr-1" />
-                        Export
-                      </Button>
-                      {expandedSections['paymentsLog'] ? <ChevronUp className="w-5 h-5 text-gray-400" /> : <ChevronDown className="w-5 h-5 text-gray-400" />}
-                    </div>
-                  </div>
-
-                  {expandedSections['paymentsLog'] && (
-                    <div className="px-6 pb-6">
-                      <div className="overflow-x-auto">
-                        <table className="min-w-full divide-y divide-gray-200 text-xs">
-                          <thead className="bg-gray-50">
-                            <tr>
-                              <th className="px-3 py-2.5 text-left font-medium text-gray-500 uppercase">Date</th>
-                              <th className="px-3 py-2.5 text-left font-medium text-gray-500 uppercase">Curr</th>
-                              <th className="px-3 py-2.5 text-left font-medium text-gray-500 uppercase">Invoice #</th>
-                              <th className="px-3 py-2.5 text-left font-medium text-gray-500 uppercase">Client</th>
-                              <th className="px-3 py-2.5 text-left font-medium text-gray-500 uppercase">Account</th>
-                              <th className="px-3 py-2.5 text-left font-medium text-gray-500 uppercase">Method</th>
-                              <th className="px-3 py-2.5 text-right font-medium text-gray-500 uppercase">Amount</th>
-                            </tr>
-                          </thead>
-                          <tbody className="bg-white divide-y divide-gray-200">
-                            {paymentsLogData.map((item) => (
-                              <tr key={item.id} className="hover:bg-gray-50">
-                                <td className="px-3 py-2 text-gray-900 whitespace-nowrap">{new Date(item.payment_date).toLocaleDateString()}</td>
-                                <td className="px-3 py-2 font-bold text-gray-500">{item.currency}</td>
-                                <td className="px-3 py-2 font-medium text-gray-900">{item.document_number}</td>
-                                <td className="px-3 py-2 text-gray-900">{item.customer_name}</td>
-                                <td className="px-3 py-2 text-gray-600">{item.account_name}</td>
-                                <td className="px-3 py-2 text-gray-600">{item.payment_method.replace('_', ' ')}</td>
-                                <td className="px-3 py-2 text-right font-semibold text-emerald-600">{formatCurrency(item.amount, item.currency)}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
