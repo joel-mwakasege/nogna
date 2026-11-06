@@ -1441,6 +1441,44 @@ export default function Reports() {
     }
   };
 
+  const exportMonthlyInvoiceReportToCSV = (data: DocumentTotal[]) => {
+    if (data.length === 0) return;
+
+    const columns = [
+      ...(visibleColumns.invoiceList.invoiceDate ? [{ header: 'Invoice date', value: (item: DocumentTotal) => item.issue_date }] : []),
+      { header: 'Currency', value: (item: DocumentTotal) => item.currency },
+      ...(visibleColumns.invoiceList.client ? [{ header: 'Company/client', value: (item: DocumentTotal) => item.customer_name }] : []),
+      ...(visibleColumns.invoiceList.project ? [{ header: 'Project/Events', value: (item: DocumentTotal) => item.project_events || '' }] : []),
+      ...(visibleColumns.invoiceList.location ? [{ header: 'Location', value: (item: DocumentTotal) => item.location || '' }] : []),
+      ...(visibleColumns.invoiceList.invoiceNumber ? [{ header: 'Invoice number', value: (item: DocumentTotal) => item.document_number }] : []),
+      ...(visibleColumns.invoiceList.taxRate ? [{ header: 'Tax rate(VAT)', value: (item: DocumentTotal) => Number(item.tax_percent || 0) }] : []),
+      ...(visibleColumns.invoiceList.totalAmount ? [{ header: 'Total (Incl. VAT)', value: (item: DocumentTotal) => Number(item.total_amount || 0) }] : []),
+      ...(visibleColumns.invoiceList.paid ? [{ header: 'Paid', value: (item: DocumentTotal) => Number(item.paid || 0) }] : []),
+      ...(visibleColumns.invoiceList.balance ? [{ header: 'Balance', value: (item: DocumentTotal) => Number(item.balance || 0) }] : []),
+      ...(visibleColumns.invoiceList.status ? [{ header: 'Status', value: (item: DocumentTotal) => mapStatus(item.status) }] : [])
+    ];
+
+    const escapeCsv = (value: string | number) => {
+      const text = String(value ?? '');
+      return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+    };
+
+    const csvContent = [
+      columns.map(column => escapeCsv(column.header)).join(','),
+      ...data.map(item => columns.map(column => escapeCsv(column.value(item))).join(','))
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `monthly-invoice-report-${dateFrom}-to-${dateTo}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
+  };
+
   const exportPaymentsToCSV = (data: PaymentLogEntry[]) => {
     if (data.length === 0) return;
     const headers = ['Payment Date', 'Currency', 'Invoice Number', 'Company/Client', 'Account Received', 'Method', 'Reference', 'Notes', 'Amount'];
@@ -2376,7 +2414,7 @@ export default function Reports() {
                         variant="secondary"
                         onClick={(e) => {
                           e.stopPropagation();
-                          exportInvoicesToExcel(documentData);
+                          exportMonthlyInvoiceReportToCSV(documentData);
                         }}
                       >
                         <Download className="w-4 h-4 mr-1" />
