@@ -1917,7 +1917,7 @@ export default function Reports() {
                       </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-100">
-                      {monthlyInvoiceReportData.map((item) => (
+                      {documentData.map((item) => (
                         <tr key={item.document_id} className="hover:bg-gray-50">
                           <td className="px-2 py-1.5 whitespace-nowrap text-gray-900">{formatDate(item.issue_date)}</td>
                           <td className="px-1.5 py-1.5 font-bold text-gray-500">{item.currency}</td>
@@ -2509,7 +2509,7 @@ export default function Reports() {
                             </tr>
                           </thead>
                           <tbody className="bg-white divide-y divide-gray-200">
-                            {documentData.map((item) => (
+                            {monthlyInvoiceReportData.map((item) => (
                               <tr key={item.document_id} className="hover:bg-gray-50">
                                 {visibleColumns.invoiceList.invoiceDate && <td className="px-4 py-3 text-sm text-gray-900 whitespace-nowrap">{formatDate(item.issue_date)}</td>}
                                 <td className="px-4 py-3 text-sm font-bold text-gray-500">{item.currency}</td>
