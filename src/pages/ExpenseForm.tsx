@@ -399,7 +399,7 @@ export default function ExpenseForm() {
         }
         setUploadingFiles(false);
       }
-      navigate(p('/expenses'), {
+      navigate(p('/bank?tab=expenses'), {
         state: { expenseUpdated: Boolean(id) },
       });
     } catch (err: any) {
