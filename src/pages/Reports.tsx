@@ -25,7 +25,7 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { Button } from '../components/Button';
 import { formatCurrency } from '../lib/currency-utils';
-import { exportInvoiceWorkbook } from '../lib/excel-report';
+import { exportInvoiceWorkbook, exportMonthlyInvoiceReportWorkbook } from '../lib/excel-report';
 
 interface RevenueByPeriod {
   year: number;
@@ -190,10 +190,9 @@ interface VisibleColumns {
     invoiceDate: boolean;
     currency: boolean;
     client: boolean;
-    project: boolean;
-    location: boolean;
     invoiceNumber: boolean;
-    taxRate: boolean;
+    exclusiveAmount: boolean;
+    vatAmount: boolean;
     totalAmount: boolean;
     paid: boolean;
     balance: boolean;
@@ -251,10 +250,9 @@ const DEFAULT_VISIBLE_COLUMNS: VisibleColumns = {
     invoiceDate: true,
     currency: true,
     client: true,
-    project: true,
-    location: true,
     invoiceNumber: true,
-    taxRate: true,
+    exclusiveAmount: true,
+    vatAmount: true,
     totalAmount: true,
     paid: true,
     balance: true,
@@ -345,6 +343,9 @@ export default function Reports() {
   });
 
   const [showConfigPanel, setShowConfigPanel] = useState(false);
+  const [showInvoiceReportFilters, setShowInvoiceReportFilters] = useState(false);
+  const [invoiceReportStartDate, setInvoiceReportStartDate] = useState('');
+  const [invoiceReportEndDate, setInvoiceReportEndDate] = useState('');
 
   useEffect(() => {
     if (!isAdmin) {
@@ -1529,42 +1530,25 @@ export default function Reports() {
     ])
   );
 
-  const exportMonthlyInvoiceReportToCSV = (data: DocumentTotal[]) => {
+  const monthlyInvoiceReportData = documentData.filter(item => {
+    if (invoiceReportStartDate && item.issue_date < invoiceReportStartDate) return false;
+    if (invoiceReportEndDate && item.issue_date > invoiceReportEndDate) return false;
+    return true;
+  });
+
+  const exportMonthlyInvoiceReportToExcel = async (data: DocumentTotal[]) => {
     if (data.length === 0) return;
-
-    const columns = [
-      ...(visibleColumns.invoiceList.invoiceDate ? [{ header: 'Invoice date', value: (item: DocumentTotal) => item.issue_date }] : []),
-      { header: 'Currency', value: (item: DocumentTotal) => item.currency },
-      ...(visibleColumns.invoiceList.client ? [{ header: 'Company/client', value: (item: DocumentTotal) => item.customer_name }] : []),
-      ...(visibleColumns.invoiceList.project ? [{ header: 'Project/Events', value: (item: DocumentTotal) => item.project_events || '' }] : []),
-      ...(visibleColumns.invoiceList.location ? [{ header: 'Location', value: (item: DocumentTotal) => item.location || '' }] : []),
-      ...(visibleColumns.invoiceList.invoiceNumber ? [{ header: 'Invoice number', value: (item: DocumentTotal) => item.document_number }] : []),
-      ...(visibleColumns.invoiceList.taxRate ? [{ header: 'Tax rate(VAT)', value: (item: DocumentTotal) => Number(item.tax_percent || 0) }] : []),
-      ...(visibleColumns.invoiceList.totalAmount ? [{ header: 'Total (Incl. VAT)', value: (item: DocumentTotal) => Number(item.total_amount || 0) }] : []),
-      ...(visibleColumns.invoiceList.paid ? [{ header: 'Paid', value: (item: DocumentTotal) => Number(item.paid || 0) }] : []),
-      ...(visibleColumns.invoiceList.balance ? [{ header: 'Balance', value: (item: DocumentTotal) => Number(item.balance || 0) }] : []),
-      ...(visibleColumns.invoiceList.status ? [{ header: 'Status', value: (item: DocumentTotal) => mapStatus(item.status) }] : [])
-    ];
-
-    const escapeCsv = (value: string | number) => {
-      const text = String(value ?? '');
-      return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
-    };
-
-    const csvContent = [
-      columns.map(column => escapeCsv(column.header)).join(','),
-      ...data.map(item => columns.map(column => escapeCsv(column.value(item))).join(','))
-    ].join('\n');
-
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `monthly-invoice-report-${dateFrom}-to-${dateTo}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    window.URL.revokeObjectURL(url);
+    try {
+      await exportMonthlyInvoiceReportWorkbook({
+        invoices: [...data].sort((a, b) => a.issue_date.localeCompare(b.issue_date)),
+        dateFrom: invoiceReportStartDate || dateFrom,
+        dateTo: invoiceReportEndDate || dateTo,
+        companyName: companySettings?.company_name || 'Kilimanjaro Audio Visual Services',
+      });
+    } catch (error) {
+      console.error('Monthly Invoice Report Excel export failed:', error);
+      alert('Unable to create the Monthly Invoice Report Excel file. Please try again.');
+    }
   };
 
   const exportPaymentsToCSV = (data: PaymentLogEntry[]) => downloadReportCSV(
@@ -1933,7 +1917,7 @@ export default function Reports() {
                       </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-100">
-                      {documentData.map((item) => (
+                      {monthlyInvoiceReportData.map((item) => (
                         <tr key={item.document_id} className="hover:bg-gray-50">
                           <td className="px-2 py-1.5 whitespace-nowrap text-gray-900">{formatDate(item.issue_date)}</td>
                           <td className="px-1.5 py-1.5 font-bold text-gray-500">{item.currency}</td>
@@ -2466,7 +2450,7 @@ export default function Reports() {
                         variant="secondary"
                         onClick={(e) => {
                           e.stopPropagation();
-                          exportMonthlyInvoiceReportToCSV(documentData);
+                          exportMonthlyInvoiceReportToExcel(monthlyInvoiceReportData);
                         }}
                       >
                         <Download className="w-4 h-4 mr-1" />
@@ -2478,6 +2462,36 @@ export default function Reports() {
 
                   {expandedSections['documents'] && (
                     <div className="px-6 pb-6">
+                      <div className="mb-4">
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => setShowInvoiceReportFilters(!showInvoiceReportFilters)}
+                        >
+                          <Filter className="w-4 h-4" />
+                          {showInvoiceReportFilters ? 'Hide Filters' : 'Show Filters'}
+                        </Button>
+                        {showInvoiceReportFilters && (
+                          <div className="mt-4 pt-4 border-t border-gray-200">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
+                                <input type="date" value={invoiceReportStartDate} onChange={(e) => setInvoiceReportStartDate(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                              </div>
+                              <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">End Date</label>
+                                <input type="date" value={invoiceReportEndDate} onChange={(e) => setInvoiceReportEndDate(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                              </div>
+                            </div>
+                            <div className="flex justify-end mt-4">
+                              <Button variant="secondary" size="sm" onClick={() => { setInvoiceReportStartDate(''); setInvoiceReportEndDate(''); }}>
+                                <X className="w-4 h-4" />
+                                Clear Filters
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
                       <div className="overflow-x-auto">
                         <table className="min-w-full divide-y divide-gray-200">
                           <thead className="bg-gray-50">
@@ -2485,10 +2499,9 @@ export default function Reports() {
                               {visibleColumns.invoiceList.invoiceDate && <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Invoice date</th>}
                               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Curr</th>
                               {visibleColumns.invoiceList.client && <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Company/client</th>}
-                              {visibleColumns.invoiceList.project && <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Project/Events</th>}
-                              {visibleColumns.invoiceList.location && <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Location</th>}
                               {visibleColumns.invoiceList.invoiceNumber && <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Invoice number</th>}
-                              {visibleColumns.invoiceList.taxRate && <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Tax rate(VAT)</th>}
+                              {visibleColumns.invoiceList.exclusiveAmount && <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Exclusive Amount</th>}
+                              {visibleColumns.invoiceList.vatAmount && <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">VAT Amount</th>}
                               {visibleColumns.invoiceList.totalAmount && <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Total (Incl. VAT)</th>}
                               {visibleColumns.invoiceList.paid && <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Paid</th>}
                               {visibleColumns.invoiceList.balance && <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Balance</th>}
@@ -2501,10 +2514,9 @@ export default function Reports() {
                                 {visibleColumns.invoiceList.invoiceDate && <td className="px-4 py-3 text-sm text-gray-900 whitespace-nowrap">{formatDate(item.issue_date)}</td>}
                                 <td className="px-4 py-3 text-sm font-bold text-gray-500">{item.currency}</td>
                                 {visibleColumns.invoiceList.client && <td className="px-4 py-3 text-sm text-gray-900">{item.customer_name}</td>}
-                                {visibleColumns.invoiceList.project && <td className="px-4 py-3 text-sm text-gray-900">{item.project_events || '—'}</td>}
-                                {visibleColumns.invoiceList.location && <td className="px-4 py-3 text-sm text-gray-900">{item.location || '—'}</td>}
                                 {visibleColumns.invoiceList.invoiceNumber && <td className="px-4 py-3 text-sm text-blue-600 font-medium">{item.document_number}</td>}
-                                {visibleColumns.invoiceList.taxRate && <td className="px-4 py-3 text-sm text-gray-900 whitespace-nowrap">{(item.tax_percent || 0).toFixed(2)}%</td>}
+                                {visibleColumns.invoiceList.exclusiveAmount && <td className="px-4 py-3 text-sm text-right text-gray-900 font-medium">{formatCurrency(item.subtotal || 0, item.currency)}</td>}
+                                {visibleColumns.invoiceList.vatAmount && <td className="px-4 py-3 text-sm text-right text-gray-900 font-medium">{formatCurrency(item.tax_amount || 0, item.currency)}</td>}
                                 {visibleColumns.invoiceList.totalAmount && <td className="px-4 py-3 text-sm text-right text-gray-900 font-medium">{formatCurrency(item.total_amount, item.currency)}</td>}
                                 {visibleColumns.invoiceList.paid && <td className="px-4 py-3 text-sm text-right text-emerald-600 font-medium">{formatCurrency(item.paid || 0, item.currency)}</td>}
                                 {visibleColumns.invoiceList.balance && <td className="px-4 py-3 text-sm text-right font-semibold text-amber-600">{formatCurrency(item.balance || 0, item.currency)}</td>}
