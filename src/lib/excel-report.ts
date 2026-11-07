@@ -367,3 +367,92 @@ export async function exportInvoiceWorkbook(options: ExportOptions) {
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
+
+export async function exportMonthlyInvoiceReportWorkbook(options: {
+  invoices: InvoiceExcelRow[];
+  dateFrom: string;
+  dateTo: string;
+  companyName?: string | null;
+}) {
+  const { invoices, dateFrom, dateTo, companyName } = options;
+  if (invoices.length === 0) return;
+
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = 'Nogna';
+  workbook.company = companyName || 'Kilimanjaro Audio Visual Services';
+  workbook.created = new Date();
+
+  const sheet = workbook.addWorksheet('Monthly Invoice Report', {
+    views: [{ state: 'frozen', ySplit: 5 }],
+    pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 },
+  });
+
+  sheet.columns = [
+    { width: 15 }, { width: 12 }, { width: 28 }, { width: 18 }, { width: 18 },
+    { width: 18 }, { width: 18 }, { width: 18 }, { width: 18 }, { width: 16 },
+  ];
+
+  styleTitle(sheet, 'A1:J1', 'MONTHLY INVOICE REPORT');
+  sheet.mergeCells('A2:J2');
+  sheet.getCell('A2').value = (companyName || 'KILIMANJARO AUDIO VISUAL SERVICES').toUpperCase();
+  sheet.getCell('A2').font = { name: 'Arial', size: 12, bold: true, color: { argb: NAVY } };
+  sheet.getCell('A2').alignment = { horizontal: 'center' };
+  sheet.mergeCells('A3:J3');
+  sheet.getCell('A3').value = `Report period: ${dateFrom} to ${dateTo}`;
+  sheet.getCell('A3').font = { name: 'Arial', size: 10, bold: true, color: { argb: NAVY } };
+  sheet.getCell('A3').alignment = { horizontal: 'center' };
+
+  const header = sheet.getRow(5);
+  header.values = [
+    'Invoice date', 'Curr', 'Company/client', 'Invoice number', 'Exclusive Amount',
+    'VAT Amount', 'Total (Incl. VAT)', 'Paid', 'Balance', 'Status'
+  ];
+  styleHeaderRow(header);
+
+  invoices.forEach(inv => {
+    const row = sheet.addRow([
+      toExcelDate(inv.issue_date),
+      inv.currency,
+      inv.customer_name,
+      inv.document_number,
+      Number(inv.subtotal || 0),
+      Number(inv.tax_amount || 0),
+      Number(inv.total_amount || 0),
+      Number(inv.paid || 0),
+      Number(inv.balance || 0),
+      normalizeStatus(inv),
+    ]);
+    row.getCell(1).numFmt = dateFormat;
+    for (let col = 5; col <= 9; col += 1) row.getCell(col).numFmt = moneyFormat;
+    const status = row.getCell(10);
+    status.font = { name: 'Arial', size: 10, bold: true, color: { argb: DARK } };
+    status.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: normalizeStatus(inv) === 'Paid' ? PAID_GREEN : OPEN_YELLOW } };
+  });
+
+  const firstRow = 6;
+  const lastRow = Math.max(5, sheet.rowCount);
+  if (lastRow >= firstRow) styleBody(sheet, firstRow, lastRow, 10);
+  sheet.autoFilter = { from: 'A5', to: `J${lastRow}` };
+
+  totalsByCurrency(invoices).forEach(([currency, totals]) => {
+    const row = sheet.addRow(['', '', '', `TOTALS (${currency})`, totals.subtotal, totals.vat, totals.total, totals.paid, totals.balance, '']);
+    row.height = 24;
+    row.eachCell((cell, col) => {
+      cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: WHITE } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: NAVY } };
+      applyBorder(cell);
+      if (col >= 5 && col <= 9) cell.numFmt = moneyFormat;
+    });
+  });
+
+  const buffer = await workbook.xlsx.writeBuffer();
+  const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `monthly-invoice-report-${dateFrom}-to-${dateTo}.xlsx`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
