@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { Receipt, Plus, Pencil, Trash2, Filter, X, Download, Calendar, Tag, CreditCard, Paperclip, Settings } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { Button } from '../components/Button';
@@ -44,6 +44,7 @@ interface PaymentCategory {
 
 export default function ExpenseList() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { slug } = useParams<{ slug: string }>();
   const p = (path: string) => `/${slug}${path}`;
   const { user, isAdmin, companyId } = useAuth();
@@ -61,13 +62,14 @@ export default function ExpenseList() {
     isOpen: false,
     isDeleting: false,
   });
-  const [showFilters, setShowFilters] = useState(false);
-  const [tempStartDate, setTempStartDate] = useState('');
-  const [tempEndDate, setTempEndDate] = useState('');
+  const restoredView = (location.state as any)?.expenseListView;
+  const [showFilters, setShowFilters] = useState(restoredView?.showFilters ?? false);
+  const [tempStartDate, setTempStartDate] = useState(restoredView?.tempStartDate ?? '');
+  const [tempEndDate, setTempEndDate] = useState(restoredView?.tempEndDate ?? '');
   const [showColumnOptions, setShowColumnOptions] = useState(false);
   const columnOptionsRef = useRef<HTMLDivElement>(null);
   const [users, setUsers] = useState<{ id: string; email: string }[]>([]);
-  const [filters, setFilters] = useState({
+  const [filters, setFilters] = useState(restoredView?.filters ?? {
     category: '',
     paymentMethod: '',
     userId: '',
@@ -75,7 +77,7 @@ export default function ExpenseList() {
     startDate: '',
     endDate: '',
   });
-  const [visibleColumns, setVisibleColumns] = useState({
+  const [visibleColumns, setVisibleColumns] = useState(restoredView?.visibleColumns ?? {
     date: true,
     description: false,
     category: true,
@@ -516,6 +518,12 @@ export default function ExpenseList() {
           </div>
         )}
 
+        {(location.state as any)?.expenseUpdated && (
+          <div className="mb-4 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm font-medium text-green-800">
+            Expense updated successfully.
+          </div>
+        )}
+
         <div className="bg-white rounded-lg shadow overflow-hidden">
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
@@ -693,7 +701,17 @@ export default function ExpenseList() {
                         {canEditExpense(expense) && (
                           <>
                             <button
-                              onClick={() => navigate(p(`/expenses/edit/${expense.id}`))}
+                              onClick={() => navigate(p(`/expenses/edit/${expense.id}`), {
+                                state: {
+                                  expenseListView: {
+                                    showFilters,
+                                    tempStartDate,
+                                    tempEndDate,
+                                    filters,
+                                    visibleColumns,
+                                  },
+                                },
+                              })}
                               className="text-blue-600 hover:text-blue-900"
                             >
                               <Pencil className="w-4 h-4" />
