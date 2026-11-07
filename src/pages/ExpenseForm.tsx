@@ -58,6 +58,7 @@ export default function ExpenseForm() {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
   const [expenseCategories, setExpenseCategories] = useState<ExpenseCategory[]>([]);
   const [paymentCategories, setPaymentCategories] = useState<PaymentCategory[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -310,6 +311,7 @@ export default function ExpenseForm() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setSuccess('');
     setSaving(true);
 
     try {
@@ -399,9 +401,12 @@ export default function ExpenseForm() {
         }
         setUploadingFiles(false);
       }
-      navigate(p('/bank?tab=expenses'), {
-        state: { expenseUpdated: Boolean(id) },
-      });
+      setSelectedFiles([]);
+      if (id) {
+        setSuccess('Expense updated successfully.');
+      } else {
+        navigate(p('/bank?tab=expenses'));
+      }
     } catch (err: any) {
       console.error('Error saving expense:', err);
       setError(err.message || 'Failed to save expense');
@@ -423,7 +428,7 @@ export default function ExpenseForm() {
       <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="mb-6">
           <button
-            onClick={() => navigate(p('/expenses'))}
+            onClick={() => navigate(p('/bank?tab=expenses'))}
             className="flex items-center gap-2 text-gray-600 hover:text-gray-900 transition-colors"
           >
             <ArrowLeft className="w-5 h-5" />
@@ -447,6 +452,12 @@ export default function ExpenseForm() {
           </div>
 
           <form onSubmit={handleSubmit} className="p-6 space-y-6">
+            {success && (
+              <div className="p-4 bg-green-50 border border-green-200 rounded-md">
+                <p className="text-sm font-medium text-green-800">{success}</p>
+              </div>
+            )}
+
             {error && (
               <div className="p-4 bg-red-50 border border-red-200 rounded-md">
                 <p className="text-sm text-red-800">{error}</p>
@@ -831,7 +842,7 @@ export default function ExpenseForm() {
               <Button
                 type="button"
                 variant="secondary"
-                onClick={() => navigate(p('/expenses'))}
+                onClick={() => navigate(p('/bank?tab=expenses'))}
                 disabled={saving}
               >
                 Cancel
