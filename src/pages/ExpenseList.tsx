@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Receipt, Plus, CreditCard as Edit2, Trash2, Filter, X, Download, Calendar, User, Tag, CreditCard, Paperclip, Settings } from 'lucide-react';
+import { Receipt, Plus, Pencil, Trash2, Filter, X, Download, Calendar, Tag, CreditCard, Paperclip, Settings } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { Button } from '../components/Button';
 import { DeleteModal } from '../components/DeleteModal';
@@ -77,11 +77,11 @@ export default function ExpenseList() {
   });
   const [visibleColumns, setVisibleColumns] = useState({
     date: true,
-    description: true,
+    description: false,
     category: true,
     payment: true,
-    account: true,
-    assignedTo: true,
+    account: false,
+    assignedTo: false,
     amount: true,
   });
 
@@ -696,7 +696,7 @@ export default function ExpenseList() {
                               onClick={() => navigate(p(`/expenses/edit/${expense.id}`))}
                               className="text-blue-600 hover:text-blue-900"
                             >
-                              <Edit2 className="w-4 h-4" />
+                              <Pencil className="w-4 h-4" />
                             </button>
                             <button
                               onClick={() => setDeleteModal({ isOpen: true, expenseId: expense.id })}
