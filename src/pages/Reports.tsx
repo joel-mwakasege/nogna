@@ -343,9 +343,6 @@ export default function Reports() {
   });
 
   const [showConfigPanel, setShowConfigPanel] = useState(false);
-  const [showInvoiceReportFilters, setShowInvoiceReportFilters] = useState(false);
-  const [invoiceReportStartDate, setInvoiceReportStartDate] = useState('');
-  const [invoiceReportEndDate, setInvoiceReportEndDate] = useState('');
 
   useEffect(() => {
     if (!isAdmin) {
@@ -1530,19 +1527,15 @@ export default function Reports() {
     ])
   );
 
-  const monthlyInvoiceReportData = documentData.filter(item => {
-    if (invoiceReportStartDate && item.issue_date < invoiceReportStartDate) return false;
-    if (invoiceReportEndDate && item.issue_date > invoiceReportEndDate) return false;
-    return true;
-  });
+  const monthlyInvoiceReportData = documentData;
 
   const exportMonthlyInvoiceReportToExcel = async (data: DocumentTotal[]) => {
     if (data.length === 0) return;
     try {
       await exportMonthlyInvoiceReportWorkbook({
         invoices: [...data].sort((a, b) => a.issue_date.localeCompare(b.issue_date)),
-        dateFrom: invoiceReportStartDate || dateFrom,
-        dateTo: invoiceReportEndDate || dateTo,
+        dateFrom,
+        dateTo,
         companyName: companySettings?.company_name || 'Kilimanjaro Audio Visual Services',
       });
     } catch (error) {
@@ -2462,36 +2455,6 @@ export default function Reports() {
 
                   {expandedSections['documents'] && (
                     <div className="px-6 pb-6">
-                      <div className="mb-4">
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          onClick={() => setShowInvoiceReportFilters(!showInvoiceReportFilters)}
-                        >
-                          <Filter className="w-4 h-4" />
-                          {showInvoiceReportFilters ? 'Hide Filters' : 'Show Filters'}
-                        </Button>
-                        {showInvoiceReportFilters && (
-                          <div className="mt-4 pt-4 border-t border-gray-200">
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                              <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
-                                <input type="date" value={invoiceReportStartDate} onChange={(e) => setInvoiceReportStartDate(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                              </div>
-                              <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">End Date</label>
-                                <input type="date" value={invoiceReportEndDate} onChange={(e) => setInvoiceReportEndDate(e.target.value)} className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                              </div>
-                            </div>
-                            <div className="flex justify-end mt-4">
-                              <Button variant="secondary" size="sm" onClick={() => { setInvoiceReportStartDate(''); setInvoiceReportEndDate(''); }}>
-                                <X className="w-4 h-4" />
-                                Clear Filters
-                              </Button>
-                            </div>
-                          </div>
-                        )}
-                      </div>
                       <div className="overflow-x-auto">
                         <table className="min-w-full divide-y divide-gray-200">
                           <thead className="bg-gray-50">
