@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, Receipt, Save, Upload, X, Download, Eye } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { Button } from '../components/Button';
@@ -49,6 +49,7 @@ interface UserProfile {
 
 export default function ExpenseForm() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { id, slug } = useParams<{ id?: string; slug: string }>();
   const p = (path: string) => `/${slug}${path}`;
   const { user, userProfile } = useAuth();
@@ -399,7 +400,12 @@ export default function ExpenseForm() {
         }
         setUploadingFiles(false);
       }
-      navigate(p('/expenses'));
+      navigate(p('/expenses'), {
+        state: {
+          expenseListView: (location.state as any)?.expenseListView,
+          expenseUpdated: Boolean(id),
+        },
+      });
     } catch (err: any) {
       console.error('Error saving expense:', err);
       setError(err.message || 'Failed to save expense');
