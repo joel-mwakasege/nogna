@@ -62,6 +62,8 @@ export default function ExpenseList() {
     isDeleting: false,
   });
   const [showFilters, setShowFilters] = useState(false);
+  const [tempStartDate, setTempStartDate] = useState('');
+  const [tempEndDate, setTempEndDate] = useState('');
   const [showColumnOptions, setShowColumnOptions] = useState(false);
   const columnOptionsRef = useRef<HTMLDivElement>(null);
   const [users, setUsers] = useState<{ id: string; email: string }[]>([]);
@@ -238,7 +240,13 @@ export default function ExpenseList() {
     }
   };
 
+  const applyReportDateFilters = () => {
+    setFilters({ ...filters, startDate: tempStartDate, endDate: tempEndDate });
+  };
+
   const clearFilters = () => {
+    setTempStartDate('');
+    setTempEndDate('');
     setFilters({
       category: '',
       paymentMethod: '',
@@ -466,8 +474,8 @@ export default function ExpenseList() {
                   <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
                   <input
                     type="date"
-                    value={filters.startDate}
-                    onChange={(e) => setFilters({ ...filters, startDate: e.target.value })}
+                    value={tempStartDate}
+                    onChange={(e) => setTempStartDate(e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
@@ -475,13 +483,14 @@ export default function ExpenseList() {
                   <label className="block text-sm font-medium text-gray-700 mb-1">End Date</label>
                   <input
                     type="date"
-                    value={filters.endDate}
-                    onChange={(e) => setFilters({ ...filters, endDate: e.target.value })}
+                    value={tempEndDate}
+                    onChange={(e) => setTempEndDate(e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
               </div>
-              <div className="flex justify-end mt-4">
+              <div className="flex justify-end gap-2 mt-4">
+                <Button size="sm" onClick={applyReportDateFilters}>Apply Filters</Button>
                 <Button variant="secondary" size="sm" onClick={clearFilters}>
                   <X className="w-4 h-4" />
                   Clear Filters
