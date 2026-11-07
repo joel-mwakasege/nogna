@@ -62,7 +62,15 @@ export default function ExpenseList() {
     isOpen: false,
     isDeleting: false,
   });
-  const restoredView = (location.state as any)?.expenseListView;
+  const expenseViewKey = `nogna:expense-list-view:${slug}`;
+  const restoredView = (() => {
+    try {
+      const saved = sessionStorage.getItem(expenseViewKey);
+      return saved ? JSON.parse(saved) : (location.state as any)?.expenseListView;
+    } catch {
+      return (location.state as any)?.expenseListView;
+    }
+  })();
   const [showFilters, setShowFilters] = useState(restoredView?.showFilters ?? false);
   const [tempStartDate, setTempStartDate] = useState(restoredView?.tempStartDate ?? '');
   const [tempEndDate, setTempEndDate] = useState(restoredView?.tempEndDate ?? '');
@@ -701,17 +709,17 @@ export default function ExpenseList() {
                         {canEditExpense(expense) && (
                           <>
                             <button
-                              onClick={() => navigate(p(`/expenses/edit/${expense.id}`), {
-                                state: {
-                                  expenseListView: {
-                                    showFilters,
-                                    tempStartDate,
-                                    tempEndDate,
-                                    filters,
-                                    visibleColumns,
-                                  },
-                                },
-                              })}
+                              onClick={() => {
+                                const expenseListView = {
+                                  showFilters,
+                                  tempStartDate,
+                                  tempEndDate,
+                                  filters,
+                                  visibleColumns,
+                                };
+                                sessionStorage.setItem(expenseViewKey, JSON.stringify(expenseListView));
+                                navigate(p(`/expenses/edit/${expense.id}`));
+                              }}
                               className="text-blue-600 hover:text-blue-900"
                             >
                               <Pencil className="w-4 h-4" />
