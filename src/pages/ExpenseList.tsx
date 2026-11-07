@@ -100,6 +100,20 @@ export default function ExpenseList() {
   }, [filters]);
 
   useEffect(() => {
+    try {
+      sessionStorage.setItem(expenseViewKey, JSON.stringify({
+        showFilters,
+        tempStartDate,
+        tempEndDate,
+        filters,
+        visibleColumns,
+      }));
+    } catch {
+      // Keep Expenses usable even if session storage is unavailable.
+    }
+  }, [expenseViewKey, showFilters, tempStartDate, tempEndDate, filters, visibleColumns]);
+
+  useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (columnOptionsRef.current && !columnOptionsRef.current.contains(event.target as Node)) {
         setShowColumnOptions(false);
